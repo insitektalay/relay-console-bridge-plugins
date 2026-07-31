@@ -10,6 +10,10 @@ runtime credential.
 - Keep the resulting device token only on that runtime host.
 - Store Hermes config and its parent directory with owner-only permissions.
 - Keep OpenClaw configuration owner-readable only.
+- Treat every successful API v2 authentication as a credential rotation. The
+  replacement must be durably written before any returned HTTP or websocket
+  token is used; a persistence failure must fail closed without logging either
+  credential.
 - Never print device tokens, enrollment codes, OAuth tokens, cookies, API keys,
   passwords, private keys, or provider credentials in logs or support bundles.
 - Revoke the device in Relay Console when a host is retired, lost, or suspected

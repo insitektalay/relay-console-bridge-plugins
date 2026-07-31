@@ -50,7 +50,7 @@ export function validateManifest({
   add(errors, /^v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?$/.test(manifest.release ?? ""), "release must be a v-prefixed semantic version");
   add(errors, ["preview", "stable"].includes(manifest.releaseStatus), "releaseStatus must be preview or stable");
   add(errors, manifest.repository === PUBLIC_REPOSITORY, "repository identity is incorrect");
-  add(errors, manifest.apiContract === "v1", "API contract must remain v1 for this release lane");
+  add(errors, manifest.apiContract === "v2", "API contract must be v2 for rotating device credentials");
   add(errors, manifest.websocketContract === "bridge.v1", "websocket contract must remain bridge.v1");
   add(errors, manifest.runtimeConnectorContract === RUNTIME_CONNECTOR_V3, "runtime connector contract must be relay-connector.v3");
   add(
@@ -121,6 +121,8 @@ export function validateManifest({
   }
 
   for (const plugin of manifest.plugins ?? []) {
+    add(errors, plugin.capabilities?.includes("rotating-credentials"), `${plugin.id} must declare rotating credentials`);
+    add(errors, plugin.capabilities?.includes("durable-auth-credential-persistence"), `${plugin.id} must durably persist authentication credentials`);
     add(errors, typeof plugin.supportedHarness?.version === "string", `${plugin.id}: supported harness version is missing`);
     add(errors, FULL_COMMIT_PATTERN.test(plugin.supportedHarness?.commit ?? ""), `${plugin.id}: supported harness commit must be a full SHA`);
     add(errors, Array.isArray(plugin.candidateHostOS) && plugin.candidateHostOS.length > 0, `${plugin.id}: candidate hosts are missing`);

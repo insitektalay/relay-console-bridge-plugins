@@ -5,7 +5,7 @@
   "completeInventory": true,
   "completeManifest": true,
   "host": {
-    "softwareVersion": "0.3.0-rc.1",
+    "softwareVersion": "0.3.0-rc.2",
     "protocolVersion": "3",
     "capabilities": {
       "metadataOnlyDiscovery": true,

@@ -1,9 +1,9 @@
 {
   "schemaVersion": "relay.bridge-compatibility.v1",
-  "release": "v0.3.0-rc.1",
+  "release": "v0.3.0-rc.2",
   "releaseStatus": "preview",
   "repository": "insitektalay/relay-console-bridge-plugins",
-  "apiContract": "v1",
+  "apiContract": "v2",
   "websocketContract": "bridge.v1",
   "runtimeConnectorContract": "relay-connector.v3",
   "supportedRuntimeConnectorProtocols": [
@@ -37,8 +37,8 @@
   "plugins": [
     {
       "id": "hermes-agent-bridge",
-      "version": "0.3.0-rc.1",
-      "supportedPluginVersions": ["0.2.0-rc.1", "0.2.0-rc.2", "0.3.0-rc.1"],
+      "version": "0.3.0-rc.2",
+      "supportedPluginVersions": ["0.3.0-rc.2"],
       "supportedHarness": {
         "version": "v2026.7.7.2",
         "commit": "9de9c25f620ff7f1ce0fd5457d596052d5159596"
@@ -70,16 +70,16 @@
         "idempotent-native-provisioning",
         "runtime-connector-v2-fallback",
         "agent-replica-v1-fallback",
-        "runtime-model-catalog"
+        "runtime-model-catalog",
+        "rotating-credentials",
+        "durable-auth-credential-persistence"
       ]
     },
     {
       "id": "openclaw-bridge",
-      "version": "2026.7.26-rc.1",
+      "version": "2026.7.31-rc.1",
       "supportedPluginVersions": [
-        "2026.7.12-rc.1",
-        "2026.7.22-rc.1",
-        "2026.7.26-rc.1"
+        "2026.7.31-rc.1"
       ],
       "supportedHarness": {
         "version": "v2026.6.11",
@@ -104,13 +104,14 @@
         "metadata-only-discovery",
         "idempotent-native-provisioning",
         "runtime-connector-v2-fallback",
-        "agent-replica-v1-fallback"
+        "agent-replica-v1-fallback",
+        "rotating-credentials",
+        "durable-auth-credential-persistence"
       ]
     }
   ],
   "rollback": "Stop the service, restore the previous versioned plugin directory, then restart and run the health command.",
   "knownGaps": [
-    "The current Relay Console backend requires bridge API v2 and durable persistence of the replacement device credential returned by authentication; this preview still declares API v1.",
     "Clean-host macOS and Linux lifecycle acceptance and macOS/web/iPhone/iPad cross-client dispatch evidence are not yet recorded for this candidate.",
     "The Relay backend compatibility baseline commit is not pinned until the release candidate is frozen."
   ]

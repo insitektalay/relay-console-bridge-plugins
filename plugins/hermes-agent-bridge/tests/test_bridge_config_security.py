@@ -28,3 +28,22 @@ def test_bridge_config_uses_owner_only_permissions(tmp_path):
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
     assert json.loads(path.read_text())["deviceToken"] == "device-token-sensitive"
+
+
+def test_bridge_config_refuses_symbolic_link_destination(tmp_path):
+    target = tmp_path / "target.json"
+    target.write_text("unchanged", encoding="utf-8")
+    path = tmp_path / "config.json"
+    path.symlink_to(target)
+    config = BridgeConfig(
+        api_url="https://relay.example.com",
+        device_public_id="device-public-id",
+        device_token="device-token-sensitive",
+        workspace_id="workspace-id",
+        external_agent_ids=["my-hermes-agent"],
+    )
+
+    with pytest.raises(RuntimeError, match="symbolic link"):
+        config.save(path)
+
+    assert target.read_text(encoding="utf-8") == "unchanged"

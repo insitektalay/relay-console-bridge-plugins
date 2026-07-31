@@ -165,6 +165,11 @@ using the lifecycle you already use for your runtime.
 Enrollment, authentication, and rotation report the normalized host type,
 runtime type, bridge version, runtime version, API contract, and websocket
 contract. Relay rejects missing or non-matching values before issuing a token.
+With bridge API v2, every successful authentication also rotates the device
+credential. The replacement is saved with owner-only configuration before any
+returned bearer token is used. Ordinary operation therefore needs no manual
+rotation command; use the explicit command only during a controlled credential
+maintenance operation, then restart the existing bridge lifecycle.
 The runtime checkout/package must match `compatibility-manifest.json`; an
 unknown version is treated as incompatible rather than guessed.
 

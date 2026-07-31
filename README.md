@@ -67,11 +67,10 @@ This repository is **preview**, not stable. The compatibility manifest is the
 source of truth. Do not advertise a host/runtime combination until its acceptance
 row passes, and do not create a stable tag while `knownGaps` is non-empty.
 
-This preview still declares bridge API contract v1. The current Relay Console
-backend on the main development branch requires API v2 and durable persistence
-of the replacement device credential returned by every authentication. Until
-that client upgrade is implemented and tested, this snapshot is suitable for
-review and contribution but not for live pairing with that backend.
+This preview implements bridge API contract v2. Every successful device
+authentication rotates the device credential; both bridges durably persist the
+replacement with owner-only configuration before using the returned bearer
+tokens.
 
 ## Relay backend contract
 
