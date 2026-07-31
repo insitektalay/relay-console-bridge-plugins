@@ -112,11 +112,22 @@ test("runtime connector v3 declaration and plugin capabilities fail closed on dr
   inputs.manifest.supportedRuntimeConnectorProtocols = ["agent-replica.v1"];
   inputs.hermesPlugin.capabilities = inputs.hermesPlugin.capabilities.filter((value) => value !== "clawchat.runtime_connector.v3");
   inputs.openclawPlugin.capabilities = inputs.openclawPlugin.capabilities.filter((value) => value !== "clawchat.runtime_connector.v3");
+  inputs.manifest.plugins[0].capabilities = inputs.manifest.plugins[0].capabilities.filter((value) => value !== "durable-auth-credential-persistence");
+  inputs.manifest.plugins[1].capabilities = inputs.manifest.plugins[1].capabilities.filter((value) => value !== "rotating-credentials");
   const errors = validateManifest(inputs);
   assert(errors.some((error) => error.includes("must be relay-connector.v3")));
   assert(errors.some((error) => error.includes("preserve v1/v2 fallbacks")));
   assert(errors.some((error) => error.includes("Hermes plugin runtime connector v3 capability")));
   assert(errors.some((error) => error.includes("OpenClaw plugin runtime connector v3 capability")));
+  assert(errors.some((error) => error.includes("durably persist authentication credentials")));
+  assert(errors.some((error) => error.includes("must declare rotating credentials")));
+});
+
+test("bridge API v2 is mandatory for rotating credentials", () => {
+  const inputs = structuredClone(currentInputs());
+  inputs.manifest.apiContract = "v1";
+  const errors = validateManifest(inputs);
+  assert(errors.some((error) => error.includes("API contract must be v2")));
 });
 
 test("unsupported backend identity fails closed", () => {

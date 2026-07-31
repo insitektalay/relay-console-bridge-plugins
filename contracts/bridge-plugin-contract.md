@@ -36,9 +36,9 @@ Request:
   "openCoreVersion": "runtime-version",
   "runtimeType": "hermes",
   "hostType": "macos-launchd",
-  "apiContractVersion": "v1",
+  "apiContractVersion": "v2",
   "websocketContractVersion": "bridge.v1",
-  "capabilities": ["clawchat.runtime.hermes"]
+  "capabilities": ["clawchat.runtime.hermes", "clawchat.bridge.rotating_credentials.v1"]
 }
 ```
 
@@ -62,9 +62,31 @@ Request:
   "openCoreVersion": "runtime-version",
   "runtimeType": "hermes",
   "hostType": "macos-launchd",
-  "apiContractVersion": "v1",
+  "apiContractVersion": "v2",
   "websocketContractVersion": "bridge.v1",
-  "capabilities": ["clawchat.runtime.hermes"]
+  "capabilities": ["clawchat.runtime.hermes", "clawchat.bridge.rotating_credentials.v1"]
+}
+```
+
+A successful API v2 authentication consumes the submitted device credential
+and returns both short-lived bearer tokens and a replacement device credential.
+The bridge must atomically persist the matching replacement in owner-only
+configuration before returning or using any bearer token. Authentication calls
+for one device must be serialized so concurrent callers cannot reuse a consumed
+credential. A missing, mismatched, or unpersistable replacement fails closed.
+
+Response:
+
+```json
+{
+  "tokens": {
+    "accessToken": "http-api-token",
+    "wsToken": "websocket-token"
+  },
+  "credentials": {
+    "devicePublicId": "bridge-device-id",
+    "deviceToken": "replacement-device-token"
+  }
 }
 ```
 
@@ -83,13 +105,17 @@ never prints the value. Relay increments the device credential generation,
 disconnects existing sockets, and rejects HTTP or websocket tokens minted under
 the previous generation.
 
-Response:
+Manual-rotation response:
 
 ```json
 {
   "tokens": {
     "accessToken": "http-api-token",
     "wsToken": "websocket-token"
+  },
+  "credentials": {
+    "devicePublicId": "bridge-device-id",
+    "deviceToken": "replacement-device-token"
   }
 }
 ```

@@ -1,7 +1,7 @@
 {
   "id": "openclaw-bridge",
   "name": "Relay Console OpenClaw Bridge",
-  "version": "2026.7.26-rc.1",
+  "version": "2026.7.31-rc.1",
   "runtime": "source-host",
   "license": "MIT",
   "description": "Relay Console bridge for a user-managed OpenClaw runtime.",
@@ -11,7 +11,8 @@
     "localAppRuntimeRecovery",
     "clawchat.agent_replica_sync",
     "clawchat.runtime_connector.v3",
-    "clawchat.runtime_connector.v2"
+    "clawchat.runtime_connector.v2",
+    "clawchat.bridge.rotating_credentials.v1"
   ],
   "contracts": [
     "../../contracts/openclaw-agent-api.md",

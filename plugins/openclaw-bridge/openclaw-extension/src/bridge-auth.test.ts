@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+ authenticateBridgeDevice,
  buildBridgeDeviceAuthPayload,
+ configureBridgeCredentialPersistence,
  redeemBridgeEnrollment,
  requireSecureRelayApiUrl,
  rotateBridgeDeviceCredential,
@@ -30,10 +32,179 @@ test("device auth payload includes capabilities and preserves the supplied crede
  assert.ok(Array.isArray(payload.capabilities));
  assert.equal(payload.runtimeType, "openclaw");
  assert.ok(["macos-launchd", "linux-systemd"].includes(payload.hostType));
- assert.equal(payload.apiContractVersion, "v1");
+ assert.equal(payload.apiContractVersion, "v2");
  assert.equal(payload.websocketContractVersion, "bridge.v1");
  assert.ok(payload.capabilities.includes("clawchat.runtime_connector.v3"));
  assert.ok(payload.capabilities.includes("clawchat.runtime_connector.v2"));
+ assert.ok(payload.capabilities.includes("clawchat.bridge.rotating_credentials.v1"));
+});
+
+test("API v2 authentication durably saves the replacement before returning tokens", async (t) => {
+ let savedConfig = {
+  channels: {
+   clawchat: {
+    apiUrl: "https://relay.example.com",
+    workspaceId: "workspace-1",
+    devicePublicId: "bdev_public",
+    deviceToken: "current-secret",
+   },
+  },
+ };
+ let requestCredential = "";
+ t.mock.method(globalThis, "fetch", async (_input: string | URL | Request, init?: RequestInit) => {
+  const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+  requestCredential = String(body.deviceToken);
+  return new Response(JSON.stringify({
+   tokens: { accessToken: "access", wsToken: "websocket" },
+   credentials: { devicePublicId: "bdev_public", deviceToken: "replacement-secret" },
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+ });
+ const restore = configureBridgeCredentialPersistence({
+  loadConfig: () => savedConfig,
+  writeConfigFile: async (config) => { savedConfig = config as typeof savedConfig; },
+ });
+ t.after(restore);
+
+ const response = await authenticateBridgeDevice({
+  apiUrl: "https://relay.example.com",
+  devicePublicId: "bdev_public",
+  deviceToken: "stale-caller-value",
+ });
+
+ assert.equal(requestCredential, "current-secret");
+ assert.equal(savedConfig.channels.clawchat.deviceToken, "replacement-secret");
+ assert.equal(response.tokens?.accessToken, "access");
+});
+
+test("concurrent API v2 authentication preserves the rotating credential chain", async (t) => {
+ let savedConfig = {
+  channels: {
+   clawchat: {
+    apiUrl: "https://relay.example.com",
+    workspaceId: "workspace-1",
+    devicePublicId: "bdev_public",
+    deviceToken: "initial-secret",
+   },
+  },
+ };
+ const requestCredentials: string[] = [];
+ t.mock.method(globalThis, "fetch", async (_input: string | URL | Request, init?: RequestInit) => {
+  const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+  requestCredentials.push(String(body.deviceToken));
+  const sequence = requestCredentials.length;
+  return new Response(JSON.stringify({
+   tokens: { accessToken: `access-${sequence}`, wsToken: `websocket-${sequence}` },
+   credentials: { devicePublicId: "bdev_public", deviceToken: `replacement-${sequence}` },
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+ });
+ const restore = configureBridgeCredentialPersistence({
+  loadConfig: () => savedConfig,
+  writeConfigFile: async (config) => { savedConfig = config as typeof savedConfig; },
+ });
+ t.after(restore);
+
+ await Promise.all([
+  authenticateBridgeDevice({
+   apiUrl: "https://relay.example.com",
+   devicePublicId: "bdev_public",
+   deviceToken: "initial-secret",
+  }),
+  authenticateBridgeDevice({
+   apiUrl: "https://relay.example.com",
+   devicePublicId: "bdev_public",
+   deviceToken: "initial-secret",
+  }),
+ ]);
+
+ assert.deepEqual(requestCredentials, ["initial-secret", "replacement-1"]);
+ assert.equal(savedConfig.channels.clawchat.deviceToken, "replacement-2");
+});
+
+test("concurrent accounts cannot overwrite each other's replacement credential", async (t) => {
+ let savedConfig = {
+  channels: {
+   clawchat: {
+    apiUrl: "https://relay.example.com",
+    workspaceId: "workspace-1",
+    devicePublicId: "device-a",
+    deviceToken: "secret-a",
+    accounts: {
+     team: {
+      apiUrl: "https://relay.example.com",
+      workspaceId: "workspace-1",
+      devicePublicId: "device-b",
+      deviceToken: "secret-b",
+     },
+    },
+   },
+  },
+ };
+ t.mock.method(globalThis, "fetch", async (_input: string | URL | Request, init?: RequestInit) => {
+  const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+  const devicePublicId = String(body.devicePublicId);
+  return new Response(JSON.stringify({
+   tokens: { accessToken: `access-${devicePublicId}` },
+   credentials: {
+    devicePublicId,
+    deviceToken: `replacement-${devicePublicId}`,
+   },
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+ });
+ const restore = configureBridgeCredentialPersistence({
+  loadConfig: () => savedConfig,
+  writeConfigFile: async (config) => { savedConfig = config as typeof savedConfig; },
+ });
+ t.after(restore);
+
+ await Promise.all([
+  authenticateBridgeDevice({
+   apiUrl: "https://relay.example.com",
+   devicePublicId: "device-a",
+   deviceToken: "secret-a",
+  }),
+  authenticateBridgeDevice({
+   apiUrl: "https://relay.example.com",
+   devicePublicId: "device-b",
+   deviceToken: "secret-b",
+  }),
+ ]);
+
+ assert.equal(savedConfig.channels.clawchat.deviceToken, "replacement-device-a");
+ assert.equal(
+  savedConfig.channels.clawchat.accounts.team.deviceToken,
+  "replacement-device-b",
+ );
+});
+
+test("API v2 authentication withholds bearer tokens when persistence fails", async (t) => {
+ const savedConfig = {
+  channels: {
+   clawchat: {
+    apiUrl: "https://relay.example.com",
+    workspaceId: "workspace-1",
+    devicePublicId: "bdev_public",
+    deviceToken: "current-secret",
+   },
+  },
+ };
+ t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+  tokens: { accessToken: "must-not-be-used" },
+  credentials: { devicePublicId: "bdev_public", deviceToken: "replacement-secret" },
+ }), { status: 200, headers: { "Content-Type": "application/json" } }));
+ const restore = configureBridgeCredentialPersistence({
+  loadConfig: () => savedConfig,
+  writeConfigFile: async () => { throw new Error("disk full"); },
+ });
+ t.after(restore);
+
+ await assert.rejects(
+  authenticateBridgeDevice({
+   apiUrl: "https://relay.example.com",
+   devicePublicId: "bdev_public",
+   deviceToken: "current-secret",
+  }),
+  /durable persistence failed/,
+ );
 });
 
 test("one-time enrollment uses the canonical bridge endpoint without logging credentials", async (t) => {

@@ -1,7 +1,7 @@
 {
   "id": "hermes-agent-bridge",
   "name": "Hermes Agent Bridge",
-  "version": "0.3.0-rc.1",
+  "version": "0.3.0-rc.2",
   "runtime": "python",
   "license": "MIT",
   "pythonDependencies": { "aiohttp": "3.14.1" },
@@ -22,6 +22,7 @@
     "clawchat.agent_replica_sync",
     "clawchat.runtime_connector.v3",
     "clawchat.runtime_connector.v2",
+    "clawchat.bridge.rotating_credentials.v1",
     "clawchat.runtime.model_catalog",
     "clawchat.host.cron_management",
     "clawchat.host.scheduler_maintenance"

@@ -77,6 +77,7 @@ HERMES_AGENT_PROVISIONING_CAPABILITY = "clawchat.runtime.hermes_agent_provisioni
 AGENT_REPLICA_SYNC_CAPABILITY = "clawchat.agent_replica_sync"
 RUNTIME_CONNECTOR_V2_CAPABILITY = "clawchat.runtime_connector.v2"
 RUNTIME_CONNECTOR_V3_CAPABILITY = "clawchat.runtime_connector.v3"
+ROTATING_CREDENTIALS_CAPABILITY = "clawchat.bridge.rotating_credentials.v1"
 RUNTIME_MODEL_CATALOG_CAPABILITY = "clawchat.runtime.model_catalog"
 HOST_CRON_CAPABILITY = "clawchat.host.cron_management"
 HOST_SCHEDULER_CAPABILITY = "clawchat.host.scheduler_maintenance"
@@ -98,12 +99,13 @@ BRIDGE_CAPABILITIES = [
     AGENT_REPLICA_SYNC_CAPABILITY,
     RUNTIME_CONNECTOR_V3_CAPABILITY,
     RUNTIME_CONNECTOR_V2_CAPABILITY,
+    ROTATING_CREDENTIALS_CAPABILITY,
     RUNTIME_MODEL_CATALOG_CAPABILITY,
     HOST_CRON_CAPABILITY,
     HOST_SCHEDULER_CAPABILITY,
 ]
-PLUGIN_VERSION = "0.3.0-rc.1"
-API_CONTRACT_VERSION = "v1"
+PLUGIN_VERSION = "0.3.0-rc.2"
+API_CONTRACT_VERSION = "v2"
 WEBSOCKET_CONTRACT_VERSION = "bridge.v1"
 
 
@@ -3396,13 +3398,31 @@ class BridgeConfig:
             os.chmod(path.parent, 0o700)
         except OSError:
             pass
-        tmp_path = path.with_suffix(".json.tmp")
-        tmp_path.write_text(json.dumps(self.to_json(), ensure_ascii=True, indent=2), encoding="utf-8")
-        tmp_path.replace(path)
+        if path.is_symlink():
+            raise RuntimeError("Refusing to write bridge credentials through a symbolic link")
+        tmp_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(tmp_path, flags, 0o600)
         try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(self.to_json(), handle, ensure_ascii=True, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, path)
             os.chmod(path, 0o600)
-        except OSError:
-            pass
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
 
     def add_external_agent_id(self, external_agent_id: str) -> bool:
         existing = set(self.external_agent_ids)
@@ -8034,9 +8054,10 @@ class SkillReferenceTracker:
 
 
 class ClawChatHermesBridge:
-    def __init__(self, config: BridgeConfig) -> None:
+    def __init__(self, config: BridgeConfig, config_path: Path | None = None) -> None:
         config.validate_for_run()
         self.config = config
+        self.config_path = config_path or _config_path()
         self.session: aiohttp.ClientSession | None = None
         self.ws: aiohttp.ClientWebSocketResponse | None = None
         self.access_token: str | None = None
@@ -8206,7 +8227,25 @@ class ClawChatHermesBridge:
             text = await response.text()
             if response.status >= 400:
                 raise RuntimeError(f"bridge device auth failed: HTTP {response.status} {text[:300]}")
-            return json.loads(text or "{}")
+            body = json.loads(text or "{}")
+        credentials = body.get("credentials") or {}
+        replacement_public_id = str(credentials.get("devicePublicId") or "").strip()
+        replacement_token = str(credentials.get("deviceToken") or "").strip()
+        if replacement_public_id != self.config.device_public_id or not replacement_token:
+            raise RuntimeError(
+                "bridge API v2 authentication response did not include matching replacement credentials"
+            )
+        # The backend consumes the previous credential during authentication.
+        # Keep the replacement in memory even if the durable write fails, but
+        # never use the returned access tokens until owner-only persistence succeeds.
+        self.config.device_token = replacement_token
+        try:
+            self.config.save(self.config_path)
+        except Exception as exc:
+            raise RuntimeError(
+                "bridge API v2 authentication rotated the device credential but durable persistence failed; retry without restarting or re-enroll the device"
+            ) from exc
+        return body
 
     async def _publish_runtime_model_catalog(
         self,
@@ -10061,7 +10100,7 @@ async def async_main(argv: list[str] | None = None) -> int:
             return 1
         if args.agents:
             config.external_agent_ids = list(dict.fromkeys([*config.external_agent_ids, *args.agents]))
-        bridge = ClawChatHermesBridge(config)
+        bridge = ClawChatHermesBridge(config, args.config or _config_path())
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
