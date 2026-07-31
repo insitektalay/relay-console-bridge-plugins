@@ -1,0 +1,19 @@
+{
+  "protocolVersion": "relay-connector.v3",
+  "workspaceId": "workspace-fixture",
+  "bridgeDeviceId": "bridge-device-fixture",
+  "runtimeHostId": "runtime-host-fixture",
+  "agents": [],
+  "discoveries": [
+    {
+      "externalId": "profile:sales",
+      "observationId": "observation-fixture",
+      "canonicalAgentId": null,
+      "directive": "metadata_only",
+      "connectionState": "discovered",
+      "documentSync": false
+    }
+  ],
+  "conflicts": [],
+  "exchangedAt": "2026-07-26T10:00:01.000Z"
+}

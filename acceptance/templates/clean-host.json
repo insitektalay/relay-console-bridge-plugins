@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "relay.bridge-acceptance.v1",
+  "recordId": "replace-with-release-plugin-host-record-id",
+  "release": "replace-with-manifest-release",
+  "pluginId": "replace-with-plugin-id",
+  "pluginVersion": "replace-with-plugin-version",
+  "harness": {
+    "version": "replace-with-pinned-harness-version",
+    "commit": "replace-with-pinned-harness-commit"
+  },
+  "scope": {
+    "kind": "clean-host",
+    "hostOS": "replace-with-candidate-host-os",
+    "runtimeLocation": "replace-with-same-mac-or-linux-vps"
+  },
+  "result": "passed",
+  "executedAt": "replace-with-ISO-timestamp",
+  "operator": "replace-with-operator-name",
+  "reviewedBy": "replace-with-independent-reviewer-name",
+  "environment": {
+    "backendOrigin": "https://relay.example.com",
+    "backendDeploymentId": "replace-with-deployment-id",
+    "runtimeInstalledBeforeRelayBridge": true,
+    "relayInstalledRuntime": false,
+    "cleanHost": true
+  },
+  "journeys": {
+    "install": "passed",
+    "enroll": "passed",
+    "dispatch": "passed",
+    "stream": "passed",
+    "finalResponse": "passed",
+    "restartReconnect": "passed",
+    "backfillNoDuplicate": "passed",
+    "rollback": "passed",
+    "health": "passed",
+    "logs": "passed",
+    "revoke": "passed",
+    "invalidToken": "passed",
+    "uninstallPreservesRuntime": "passed"
+  },
+  "evidence": [
+    {
+      "path": "acceptance/evidence/replace-with-record-id/redacted-transcript.txt",
+      "sha256": "replace-with-lowercase-sha256",
+      "redacted": true,
+      "containsSecrets": false
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "apiUrl": "https://your-relay-backend.up.railway.app",
+  "workspaceId": "workspace-id",
+  "workspaceName": "Workspace",
+  "devicePublicId": "generated-device-public-id",
+  "deviceToken": "generated-device-token",
+  "externalAgentIds": [
+    "my-hermes-agent"
+  ],
+  "deviceLabel": "Office Mac Hermes bridge"
+}

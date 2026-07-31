@@ -1,0 +1,13 @@
+{
+  "protocolVersion": "relay-connector.v3",
+  "workspaceId": "workspace-fixture",
+  "runtimeHostId": "runtime-host-fixture",
+  "externalId": "profile:sales",
+  "observationId": "observation-fixture",
+  "canonicalAgentId": "agent-fixture",
+  "directive": "connect",
+  "connectionState": "connected",
+  "documentSync": true,
+  "documentConsentVersion": 1,
+  "bindingEpoch": "1"
+}

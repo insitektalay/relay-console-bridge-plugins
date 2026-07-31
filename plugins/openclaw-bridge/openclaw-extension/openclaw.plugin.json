@@ -1,0 +1,11 @@
+{
+ "id": "clawchat",
+ "name": "Relay Console",
+ "description": "Relay Console workspace bridge channel plugin",
+ "channels": ["clawchat"],
+ "configSchema": {
+ "type": "object",
+ "additionalProperties": false,
+ "properties": {}
+ }
+}

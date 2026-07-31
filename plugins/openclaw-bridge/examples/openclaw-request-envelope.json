@@ -1,0 +1,18 @@
+{
+  "requestId": "example-request-id",
+  "appSlug": "local-linkcrest",
+  "method": "POST",
+  "baseUrl": "http://localhost:3052/api/openclaw",
+  "path": "tasks/complete",
+  "contractVersion": "2026-03-18",
+  "credential": {
+    "authorization": "Bearer LOCAL"
+  },
+  "body": {
+    "contractVersion": "2026-03-18",
+    "input": {
+      "taskId": "example-task-id",
+      "resultSummary": "Completed safely with verified readback."
+    }
+  }
+}

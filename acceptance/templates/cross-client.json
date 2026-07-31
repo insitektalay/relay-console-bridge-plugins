@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "relay.bridge-acceptance.v1",
+  "recordId": "replace-with-release-plugin-cross-client-record-id",
+  "release": "replace-with-manifest-release",
+  "pluginId": "replace-with-plugin-id",
+  "pluginVersion": "replace-with-plugin-version",
+  "harness": {
+    "version": "replace-with-pinned-harness-version",
+    "commit": "replace-with-pinned-harness-commit"
+  },
+  "scope": {
+    "kind": "cross-client",
+    "runtimeLocation": "second-computer"
+  },
+  "result": "passed",
+  "executedAt": "replace-with-ISO-timestamp",
+  "operator": "replace-with-operator-name",
+  "reviewedBy": "replace-with-independent-reviewer-name",
+  "environment": {
+    "backendOrigin": "https://relay.example.com",
+    "backendDeploymentId": "replace-with-deployment-id",
+    "runtimeInstalledBeforeRelayBridge": true,
+    "relayInstalledRuntime": false
+  },
+  "clients": {
+    "macos": "replace-with-version-and-build",
+    "web": "replace-with-deployment-id",
+    "iphone": "replace-with-version-and-build",
+    "ipad": "replace-with-version-and-build"
+  },
+  "journeys": {
+    "macosDispatch": "passed",
+    "webDispatch": "passed",
+    "iphoneDispatch": "passed",
+    "ipadDispatch": "passed",
+    "streamingVisible": "passed",
+    "finalResponseConverged": "passed",
+    "runtimeOfflineVisible": "passed",
+    "restartReconnect": "passed",
+    "backfillNoDuplicate": "passed",
+    "revokedDeviceBlocked": "passed",
+    "invalidTokenBlocked": "passed"
+  },
+  "evidence": [
+    {
+      "path": "acceptance/evidence/replace-with-record-id/redacted-transcript.txt",
+      "sha256": "replace-with-lowercase-sha256",
+      "redacted": true,
+      "containsSecrets": false
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "id": "hermes-agent-bridge",
+  "name": "Hermes Agent Bridge",
+  "version": "0.3.0-rc.1",
+  "runtime": "python",
+  "license": "MIT",
+  "pythonDependencies": { "aiohttp": "3.14.1" },
+  "description": "Relay Console bridge plugin for user-managed Hermes Agent runtime dispatches.",
+  "entry": "src/main.py",
+  "capabilities": [
+    "clawchat.runtime.hermes",
+    "clawchat.marketplace.tools",
+    "marketplaceHermesSkillInstall",
+    "marketplaceLocalRepoDocsRead",
+    "marketplaceLocalRepoDocsWrite",
+    "marketplaceLocalAppAgentApiSetup",
+    "marketplaceLocalAppAgentApiRequest",
+    "localAppRuntimeRecovery",
+    "clawchat.runtime.structured_jobs",
+    "clawchat.runtime.structured_output",
+    "clawchat.runtime.hermes_agent_provisioning",
+    "clawchat.agent_replica_sync",
+    "clawchat.runtime_connector.v3",
+    "clawchat.runtime_connector.v2",
+    "clawchat.runtime.model_catalog",
+    "clawchat.host.cron_management",
+    "clawchat.host.scheduler_maintenance"
+  ],
+  "contracts": [
+    "../../contracts/bridge-plugin-contract.md",
+    "../../contracts/hermes-agent-runtime.md",
+    "../../contracts/openclaw-agent-api.md"
+  ]
+}

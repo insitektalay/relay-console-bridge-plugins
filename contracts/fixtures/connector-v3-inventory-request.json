@@ -1,0 +1,35 @@
+{
+  "protocolVersion": "relay-connector.v3",
+  "runtimeType": "hermes",
+  "inventoryGeneration": "inventory-generation-0001",
+  "completeInventory": true,
+  "completeManifest": true,
+  "host": {
+    "softwareVersion": "0.3.0-rc.1",
+    "protocolVersion": "3",
+    "capabilities": {
+      "metadataOnlyDiscovery": true,
+      "profileIsolation": "fixed_process"
+    }
+  },
+  "agents": [
+    {
+      "externalId": "profile:sales",
+      "name": "Sales",
+      "role": "assistant",
+      "status": "active",
+      "description": "Sales research and follow-up",
+      "modelPrimary": "provider-safe-model-label",
+      "capabilities": [
+        "dispatch",
+        "sessions",
+        "tools"
+      ],
+      "skillCount": 4,
+      "nativeKind": "hermes_profile",
+      "lastModifiedAt": "2026-07-26T10:00:00.000Z",
+      "documents": []
+    }
+  ],
+  "acknowledgements": []
+}

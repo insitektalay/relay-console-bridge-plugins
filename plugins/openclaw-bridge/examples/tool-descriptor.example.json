@@ -1,0 +1,26 @@
+{
+  "name": "linkcrest_agent_api",
+  "functionName": "linkcrest_agent_api",
+  "description": "Call approved local LinkCrest/OpenClaw Agent API routes through the user's source-host bridge.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "method": {
+        "type": "string",
+        "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+      },
+      "path": {
+        "type": "string",
+        "description": "Path under /api/openclaw, for example tasks/complete."
+      },
+      "input": {
+        "type": "object",
+        "description": "OpenClaw contract envelope body."
+      }
+    },
+    "required": ["method", "path"]
+  },
+  "approvalRequired": true,
+  "sourceHostRequired": true
+}
+

@@ -1,0 +1,22 @@
+{
+  "protocolVersion": "relay-connector.v3",
+  "commandId": "provision-command-fixture",
+  "jobId": "provision-job-fixture",
+  "workspaceId": "workspace-fixture",
+  "runtimeHostId": "runtime-host-fixture",
+  "runtimeType": "openclaw",
+  "idempotencyKey": "fixture-idempotency-key",
+  "expectedBindingEpoch": "1",
+  "payload": {
+    "slug": "sales-research",
+    "name": "Sales Research",
+    "role": "assistant",
+    "modelPrimary": "provider-safe-model-label"
+  },
+  "files": [
+    {
+      "filename": "SOUL.md",
+      "content": "Support the sales research workflow."
+    }
+  ]
+}

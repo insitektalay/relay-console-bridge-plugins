@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "relay.bridge-compatibility.v1",
+  "release": "v0.3.0-rc.1",
+  "releaseStatus": "preview",
+  "repository": "insitektalay/relay-console-bridge-plugins",
+  "apiContract": "v1",
+  "websocketContract": "bridge.v1",
+  "runtimeConnectorContract": "relay-connector.v3",
+  "supportedRuntimeConnectorProtocols": [
+    "agent-replica.v1",
+    "relay-connector.v2",
+    "relay-connector.v3"
+  ],
+  "runtimeConnectorCompatibilityWindow": {
+    "agent-replica.v1": {
+      "mode": "existing-bindings-only",
+      "newConnectionConsent": false,
+      "sunsetAt": "2026-09-30T23:59:59Z"
+    },
+    "relay-connector.v2": {
+      "mode": "existing-bindings-and-metadata-discovery",
+      "newConnectionConsent": false,
+      "sunsetAt": "2026-10-31T23:59:59Z"
+    },
+    "relay-connector.v3": {
+      "mode": "current",
+      "newConnectionConsent": true,
+      "sunsetAt": null
+    }
+  },
+  "marketplaceContract": "swift-marketplace.v1",
+  "supportedBackend": {
+    "version": "1.0.0",
+    "commit": null,
+    "originPolicy": "operator-configured-https"
+  },
+  "plugins": [
+    {
+      "id": "hermes-agent-bridge",
+      "version": "0.3.0-rc.1",
+      "supportedPluginVersions": ["0.2.0-rc.1", "0.2.0-rc.2", "0.3.0-rc.1"],
+      "supportedHarness": {
+        "version": "v2026.7.7.2",
+        "commit": "9de9c25f620ff7f1ce0fd5457d596052d5159596"
+      },
+      "supportedRuntimeVersions": ["v2026.7.7.2", "0.12.0"],
+      "runtimeDependencies": {
+        "python": {
+          "aiohttp": "3.14.1"
+        }
+      },
+      "candidateHostOS": ["linux-systemd", "macos-launchd"],
+      "hostAcceptance": {
+        "linux-systemd": "not-run-on-clean-host",
+        "macos-launchd": "not-run-on-clean-host",
+        "windows": "unsupported"
+      },
+      "capabilities": [
+        "reconnect",
+        "backfill",
+        "dispatch-dedupe",
+        "terminal-ack",
+        "marketplace-broker",
+        "context-scoped-marketplace-tools",
+        "agent-replica-sync",
+        "runtime-connector-v3",
+        "metadata-only-discovery",
+        "native-profile-inventory",
+        "isolated-profile-workers",
+        "idempotent-native-provisioning",
+        "runtime-connector-v2-fallback",
+        "agent-replica-v1-fallback",
+        "runtime-model-catalog"
+      ]
+    },
+    {
+      "id": "openclaw-bridge",
+      "version": "2026.7.26-rc.1",
+      "supportedPluginVersions": [
+        "2026.7.12-rc.1",
+        "2026.7.22-rc.1",
+        "2026.7.26-rc.1"
+      ],
+      "supportedHarness": {
+        "version": "v2026.6.11",
+        "commit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2"
+      },
+      "supportedRuntimeVersions": ["v2026.6.11"],
+      "candidateHostOS": ["linux-systemd", "macos-launchd"],
+      "hostAcceptance": {
+        "linux-systemd": "not-run-on-clean-host",
+        "macos-launchd": "not-run-on-clean-host",
+        "windows": "unsupported"
+      },
+      "capabilities": [
+        "one-time-enrollment",
+        "reconnect",
+        "backfill",
+        "dispatch-dedupe",
+        "durable-session-mapping",
+        "marketplace-wrapper-tools",
+        "agent-replica-sync",
+        "runtime-connector-v3",
+        "metadata-only-discovery",
+        "idempotent-native-provisioning",
+        "runtime-connector-v2-fallback",
+        "agent-replica-v1-fallback"
+      ]
+    }
+  ],
+  "rollback": "Stop the service, restore the previous versioned plugin directory, then restart and run the health command.",
+  "knownGaps": [
+    "Clean-host macOS and Linux lifecycle acceptance and macOS/web/iPhone/iPad cross-client dispatch evidence are not yet recorded for this candidate.",
+    "The Relay backend compatibility baseline commit is not pinned until the release candidate is frozen."
+  ]
+}
