@@ -110,6 +110,7 @@
   ],
   "rollback": "Stop the service, restore the previous versioned plugin directory, then restart and run the health command.",
   "knownGaps": [
+    "The current Relay Console backend requires bridge API v2 and durable persistence of the replacement device credential returned by authentication; this preview still declares API v1.",
     "Clean-host macOS and Linux lifecycle acceptance and macOS/web/iPhone/iPad cross-client dispatch evidence are not yet recorded for this candidate.",
     "The Relay backend compatibility baseline commit is not pinned until the release candidate is frozen."
   ]
