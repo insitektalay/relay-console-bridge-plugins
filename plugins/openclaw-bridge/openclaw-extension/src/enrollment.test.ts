@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { Readable } from "node:stream";
 
@@ -22,6 +23,35 @@ const response = {
  },
  credentials: { devicePublicId: "bdev_public", deviceToken: "device-secret" },
 };
+
+const pluginManifest = JSON.parse(readFileSync(new URL("../openclaw.plugin.json", import.meta.url), "utf8"));
+
+function assertEnrollmentMatchesManifest(accountId: string): void {
+ const config = applyBridgeEnrollmentToConfig({}, {
+  apiUrl: "https://relay.example.com",
+  accountId,
+  response,
+ });
+ const channel = (config.channels as Record<string, Record<string, unknown>>).clawchat;
+ const schema = pluginManifest.channelConfigs.clawchat.schema;
+ const enrolled = accountId === "default"
+  ? channel
+  : (channel.accounts as Record<string, Record<string, unknown>>)[accountId];
+ const allowedProperties = accountId === "default"
+  ? schema.properties
+  : schema.properties.accounts.additionalProperties.properties;
+
+ assert.deepEqual(
+  Object.keys(enrolled).filter((key) => !(key in allowedProperties)),
+  [],
+  `enrollment writes fields rejected by the ${accountId} channel schema`,
+ );
+}
+
+test("every default and named enrollment field is accepted by the plugin manifest", () => {
+ assertEnrollmentMatchesManifest("default");
+ assertEnrollmentMatchesManifest("team");
+});
 
 test("enrollment writes the default channel account without exposing credentials elsewhere", () => {
  const config = applyBridgeEnrollmentToConfig({ agents: { list: [] } }, {

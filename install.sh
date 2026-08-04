@@ -174,7 +174,7 @@ const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/v1/bridge/compati
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    pluginVersion: "2026.7.31-rc.2",
+    pluginVersion: "2026.7.31-rc.3",
     openCoreVersion: runtimeVersion || undefined,
     runtimeType: "openclaw",
     hostType,

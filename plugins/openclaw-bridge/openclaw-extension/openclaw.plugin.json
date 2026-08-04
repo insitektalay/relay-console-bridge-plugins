@@ -15,6 +15,12 @@
      "deviceToken": { "type": "string" },
      "workspaceId": { "type": "string" },
      "openclawAgentId": { "type": "string" },
+     "compatibilityLevel": { "type": ["string", "null"] },
+     "operatingMode": { "type": ["string", "null"] },
+     "enabledCapabilities": {
+      "type": "array",
+      "items": { "type": "string" }
+     },
      "accounts": {
       "type": "object",
       "additionalProperties": {
@@ -25,7 +31,13 @@
         "devicePublicId": { "type": "string" },
         "deviceToken": { "type": "string" },
         "workspaceId": { "type": "string" },
-        "openclawAgentId": { "type": "string" }
+        "openclawAgentId": { "type": "string" },
+        "compatibilityLevel": { "type": ["string", "null"] },
+        "operatingMode": { "type": ["string", "null"] },
+        "enabledCapabilities": {
+         "type": "array",
+         "items": { "type": "string" }
+        }
        },
        "additionalProperties": false
       }
