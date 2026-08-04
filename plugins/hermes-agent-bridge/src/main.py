@@ -3339,6 +3339,9 @@ class BridgeConfig:
     workspace_name: str | None = None
     external_agent_ids: list[str] = field(default_factory=list)
     device_label: str = DEFAULT_DEVICE_LABEL
+    compatibility_level: str | None = None
+    operating_mode: str | None = None
+    enabled_capabilities: list[str] = field(default_factory=list)
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "BridgeConfig":
@@ -3364,6 +3367,21 @@ class BridgeConfig:
                 if str(item).strip()
             ],
             device_label=str(data.get("deviceLabel") or data.get("device_label") or DEFAULT_DEVICE_LABEL),
+            compatibility_level=(
+                str(data.get("compatibilityLevel") or data.get("compatibility_level")).strip()
+                if data.get("compatibilityLevel") or data.get("compatibility_level")
+                else None
+            ),
+            operating_mode=(
+                str(data.get("operatingMode") or data.get("operating_mode")).strip()
+                if data.get("operatingMode") or data.get("operating_mode")
+                else None
+            ),
+            enabled_capabilities=[
+                str(item).strip()
+                for item in (data.get("enabledCapabilities") or data.get("enabled_capabilities") or [])
+                if str(item).strip()
+            ],
         )
 
     @classmethod
@@ -3390,6 +3408,9 @@ class BridgeConfig:
             "deviceToken": self.device_token,
             "externalAgentIds": self.external_agent_ids,
             "deviceLabel": self.device_label,
+            "compatibilityLevel": self.compatibility_level,
+            "operatingMode": self.operating_mode,
+            "enabledCapabilities": self.enabled_capabilities,
         }
 
     def save(self, path: Path | None = None) -> None:
@@ -8240,6 +8261,14 @@ class ClawChatHermesBridge:
         # Keep the replacement in memory even if the durable write fails, but
         # never use the returned access tokens until owner-only persistence succeeds.
         self.config.device_token = replacement_token
+        compatibility = (body.get("device") or {}).get("compatibility") or {}
+        self.config.compatibility_level = str(compatibility.get("level") or "").strip() or None
+        self.config.operating_mode = str(compatibility.get("operatingMode") or "").strip() or None
+        self.config.enabled_capabilities = [
+            str(item).strip()
+            for item in compatibility.get("enabledCapabilities") or []
+            if str(item).strip()
+        ]
         try:
             self.config.save(self.config_path)
         except Exception as exc:
@@ -9993,6 +10022,7 @@ async def enroll(api_url: str, code: str, agents: list[str], device_label: str, 
 
     credentials = body.get("credentials") or {}
     workspace = body.get("workspace") or {}
+    compatibility = (body.get("device") or {}).get("compatibility") or {}
     config = BridgeConfig(
         api_url=api_url,
         workspace_id=workspace.get("id"),
@@ -10001,6 +10031,13 @@ async def enroll(api_url: str, code: str, agents: list[str], device_label: str, 
         device_token=credentials.get("deviceToken") or body.get("deviceToken") or "",
         external_agent_ids=agents,
         device_label=device_label,
+        compatibility_level=str(compatibility.get("level") or "").strip() or None,
+        operating_mode=str(compatibility.get("operatingMode") or "").strip() or None,
+        enabled_capabilities=[
+            str(item).strip()
+            for item in compatibility.get("enabledCapabilities") or []
+            if str(item).strip()
+        ],
     )
     config.validate_for_run()
     config.save(config_path)

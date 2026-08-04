@@ -17,6 +17,27 @@ Relay Console never installs Hermes Agent or OpenClaw. Install, authenticate,
 update, and start your chosen runtime using its official documentation before
 installing a bridge.
 
+Before asking for a one-time enrollment code, the guided installer detects the
+runtime version and calls Relay's compatibility preflight. The result has three
+tiers:
+
+- **verified/full**: this exact runtime and bridge combination has passed the
+  declared compatibility checks, so all requested server-authorized features
+  may be enabled;
+- **compatible/safe**: the runtime is inside the supported version family, or
+  has an unrecognized version label, but has not been verified exactly. Relay
+  enables only the runtime's minimum safe capability and reports which optional
+  capabilities are disabled; and
+- **unsupported/blocked**: the runtime is below the supported range, explicitly
+  known to be incompatible, has the wrong bridge/API protocol, or runs on an
+  unsupported host.
+
+Safe mode is intentional forward compatibility, not a claim that an untested
+runtime is fully verified. Enrollment repeats the same server-side check, so a
+stale or bypassed installer cannot grant capabilities that the server did not
+negotiate. A preflight `404` is accepted only as a rolling-deployment fallback;
+the enrollment endpoint still makes the authoritative decision.
+
 Relay Console's guided setup downloads a reviewed commit of this repository and
 runs the top-level `install.sh`. That installer reads the one-time enrollment
 code from standard input, installs the selected bridge, enrolls it, starts it,
@@ -176,8 +197,10 @@ credential. The replacement is saved with owner-only configuration before any
 returned bearer token is used. Ordinary operation therefore needs no manual
 rotation command; use the explicit command only during a controlled credential
 maintenance operation, then restart the existing bridge lifecycle.
-The runtime checkout/package must match `compatibility-manifest.json`; an
-unknown version is treated as incompatible rather than guessed.
+The runtime checkout/package is evaluated against `compatibility-manifest.json`.
+Exact verified versions use full mode, compatible version families and unknown
+labels use capability-restricted safe mode, and known-incompatible or out-of-range
+versions are blocked.
 
 After authentication, both plugins try `relay-connector.v3` for metadata-only
 native-agent discovery, canonical agent mapping, and managed-document

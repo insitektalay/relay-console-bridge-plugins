@@ -75,6 +75,13 @@ export type BridgeEnrollmentResponse = {
   id?: string;
   devicePublicId?: string;
   label?: string;
+  compatibility?: {
+   level?: "verified" | "compatible" | "unsupported";
+   operatingMode?: "full" | "safe" | "blocked";
+   enabledCapabilities?: string[];
+   disabledCapabilities?: string[];
+   warnings?: string[];
+  };
  };
  credentials?: {
   devicePublicId?: string;

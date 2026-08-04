@@ -106,6 +106,17 @@ test("version drift and accidental Windows advertising fail closed", () => {
   assert(errors.some((error) => error.includes("unsupported candidate host windows")));
 });
 
+test("runtime compatibility tiers fail closed when their policy drifts", () => {
+  const inputs = structuredClone(currentInputs());
+  inputs.manifest.plugins[0].verifiedRuntimeVersions.push("9.9.9");
+  inputs.manifest.plugins[0].runtimeVersionPolicy.ranges[0].scheme = "guess";
+  delete inputs.manifest.plugins[1].runtimeVersionPolicy.safeModeCapabilities;
+  const errors = validateManifest(inputs);
+  assert(errors.some((error) => error.includes("verified runtime 9.9.9 is not declared supported")));
+  assert(errors.some((error) => error.includes("unsupported version scheme")));
+  assert(errors.some((error) => error.includes("safe-mode capabilities are missing")));
+});
+
 test("runtime connector v3 declaration and plugin capabilities fail closed on drift", () => {
   const inputs = structuredClone(currentInputs());
   inputs.manifest.runtimeConnectorContract = "agent-replica.v1";

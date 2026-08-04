@@ -46,7 +46,7 @@ export function validateManifest({
 }) {
   const errors = [];
   const stableRequired = stable || manifest.releaseStatus === "stable";
-  add(errors, manifest.schemaVersion === "relay.bridge-compatibility.v1", "unexpected compatibility schema");
+  add(errors, manifest.schemaVersion === "relay.bridge-compatibility.v2", "unexpected compatibility schema");
   add(errors, /^v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?$/.test(manifest.release ?? ""), "release must be a v-prefixed semantic version");
   add(errors, ["preview", "stable"].includes(manifest.releaseStatus), "releaseStatus must be preview or stable");
   add(errors, manifest.repository === PUBLIC_REPOSITORY, "repository identity is incorrect");
@@ -127,6 +127,25 @@ export function validateManifest({
     add(errors, FULL_COMMIT_PATTERN.test(plugin.supportedHarness?.commit ?? ""), `${plugin.id}: supported harness commit must be a full SHA`);
     add(errors, Array.isArray(plugin.candidateHostOS) && plugin.candidateHostOS.length > 0, `${plugin.id}: candidate hosts are missing`);
     add(errors, plugin.hostAcceptance?.windows === "unsupported", `${plugin.id}: Windows must remain explicitly unsupported`);
+    add(errors, Array.isArray(plugin.verifiedRuntimeVersions) && plugin.verifiedRuntimeVersions.length > 0, `${plugin.id}: verified runtime versions are missing`);
+    add(errors, Array.isArray(plugin.supportedRuntimeVersions) && plugin.supportedRuntimeVersions.length > 0, `${plugin.id}: supported runtime versions are missing`);
+    const supportedRuntimeVersions = new Set(plugin.supportedRuntimeVersions ?? []);
+    for (const version of plugin.verifiedRuntimeVersions ?? []) {
+      add(errors, supportedRuntimeVersions.has(version), `${plugin.id}: verified runtime ${version} is not declared supported`);
+    }
+    const runtimePolicy = plugin.runtimeVersionPolicy;
+    add(errors, ["safe", "blocked"].includes(runtimePolicy?.unknownRuntimeMode), `${plugin.id}: unknown runtime mode must be safe or blocked`);
+    add(errors, Array.isArray(runtimePolicy?.ranges), `${plugin.id}: runtime compatibility ranges are missing`);
+    add(errors, Array.isArray(runtimePolicy?.knownIncompatibleVersions), `${plugin.id}: known-incompatible runtime list is missing`);
+    add(errors, Array.isArray(runtimePolicy?.safeModeCapabilities), `${plugin.id}: safe-mode capabilities are missing`);
+    for (const range of runtimePolicy?.ranges ?? []) {
+      add(errors, ["semver", "calendar"].includes(range.scheme), `${plugin.id}: runtime range has an unsupported version scheme`);
+      add(errors, typeof range.minimum === "string" && range.minimum.length > 0, `${plugin.id}: runtime range minimum is missing`);
+      add(errors, range.maximumExclusive === undefined || (typeof range.maximumExclusive === "string" && range.maximumExclusive.length > 0), `${plugin.id}: runtime range maximum is invalid`);
+    }
+    for (const capability of runtimePolicy?.safeModeCapabilities ?? []) {
+      add(errors, typeof capability === "string" && capability.length > 0, `${plugin.id}: safe-mode capability is invalid`);
+    }
     for (const host of plugin.candidateHostOS ?? []) {
       add(errors, SUPPORTED_HOSTS.has(host), `${plugin.id}: unsupported candidate host ${host}`);
       add(errors, typeof plugin.hostAcceptance?.[host] === "string", `${plugin.id}: acceptance status is missing for ${host}`);

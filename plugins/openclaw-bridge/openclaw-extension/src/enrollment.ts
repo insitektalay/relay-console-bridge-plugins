@@ -52,6 +52,9 @@ export function applyBridgeEnrollmentToConfig(
   devicePublicId,
   deviceToken: credentialValue,
   enabled: true,
+  compatibilityLevel: input.response.device?.compatibility?.level ?? null,
+  operatingMode: input.response.device?.compatibility?.operatingMode ?? null,
+  enabledCapabilities: input.response.device?.compatibility?.enabledCapabilities ?? [],
   ...(input.openclawAgentId?.trim()
    ? { openclawAgentId: input.openclawAgentId.trim() }
    : {}),

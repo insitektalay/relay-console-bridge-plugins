@@ -11,7 +11,15 @@ import {
 
 const response = {
  workspace: { id: "workspace-1", name: "Example" },
- device: { id: "device-1", label: "Office OpenClaw" },
+ device: {
+  id: "device-1",
+  label: "Office OpenClaw",
+  compatibility: {
+   level: "compatible" as const,
+   operatingMode: "safe" as const,
+   enabledCapabilities: ["clawchat.runtime.openclaw"],
+  },
+ },
  credentials: { devicePublicId: "bdev_public", deviceToken: "device-secret" },
 };
 
@@ -30,6 +38,9 @@ test("enrollment writes the default channel account without exposing credentials
  assert.equal(channel.deviceToken, "device-secret");
  assert.equal(channel.openclawAgentId, "main");
  assert.equal(channel.enabled, true);
+ assert.equal(channel.compatibilityLevel, "compatible");
+ assert.equal(channel.operatingMode, "safe");
+ assert.deepEqual(channel.enabledCapabilities, ["clawchat.runtime.openclaw"]);
 });
 
 test("enrollment preserves existing accounts and scopes a named account", () => {

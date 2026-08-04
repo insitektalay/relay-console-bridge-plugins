@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "relay.bridge-compatibility.v1",
-  "release": "v0.3.0-rc.2",
+  "schemaVersion": "relay.bridge-compatibility.v2",
+  "release": "v0.3.0-rc.3",
   "releaseStatus": "preview",
   "repository": "insitektalay/relay-console-bridge-plugins",
   "apiContract": "v2",
@@ -43,7 +43,17 @@
         "version": "v2026.7.7.2",
         "commit": "9de9c25f620ff7f1ce0fd5457d596052d5159596"
       },
-      "supportedRuntimeVersions": ["v2026.7.7.2", "0.12.0"],
+      "supportedRuntimeVersions": ["v2026.7.7.2", "0.12.0", "0.15.1"],
+      "verifiedRuntimeVersions": ["v2026.7.7.2", "0.12.0"],
+      "runtimeVersionPolicy": {
+        "unknownRuntimeMode": "safe",
+        "ranges": [
+          { "scheme": "semver", "minimum": "0.12.0", "maximumExclusive": "1.0.0" },
+          { "scheme": "calendar", "minimum": "2026.7.7.2" }
+        ],
+        "knownIncompatibleVersions": [],
+        "safeModeCapabilities": ["clawchat.runtime.hermes"]
+      },
       "runtimeDependencies": {
         "python": {
           "aiohttp": "3.14.1"
@@ -86,6 +96,15 @@
         "commit": "e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2"
       },
       "supportedRuntimeVersions": ["v2026.6.11"],
+      "verifiedRuntimeVersions": ["v2026.6.11"],
+      "runtimeVersionPolicy": {
+        "unknownRuntimeMode": "safe",
+        "ranges": [
+          { "scheme": "calendar", "minimum": "2026.6.11" }
+        ],
+        "knownIncompatibleVersions": [],
+        "safeModeCapabilities": ["clawchat.runtime.openclaw"]
+      },
       "candidateHostOS": ["linux-systemd", "macos-launchd"],
       "hostAcceptance": {
         "linux-systemd": "not-run-on-clean-host",

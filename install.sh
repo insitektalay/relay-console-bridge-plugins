@@ -78,17 +78,113 @@ esac
 
 [[ -n "${DEVICE_LABEL//[[:space:]]/}" ]] || fail "--label must not be empty"
 
-if [[ -t 0 ]]; then
-  printf 'One-time Relay bridge pairing code: ' >&2
-  IFS= read -r -s ENROLLMENT_CODE
-  printf '\n' >&2
-else
-  IFS= read -r ENROLLMENT_CODE || [[ -n "${ENROLLMENT_CODE:-}" ]]
-fi
+read_enrollment_code() {
+  if [[ -t 0 ]]; then
+    printf 'One-time Relay bridge pairing code: ' >&2
+    IFS= read -r -s ENROLLMENT_CODE
+    printf '\n' >&2
+  else
+    IFS= read -r ENROLLMENT_CODE || [[ -n "${ENROLLMENT_CODE:-}" ]]
+  fi
+  [[ -n "${ENROLLMENT_CODE:-}" ]] || fail "a one-time pairing code is required on standard input"
+  [[ "$(printf '%s' "$ENROLLMENT_CODE" | wc -c | tr -d ' ')" -le "$MAX_ENROLLMENT_CODE_BYTES" ]] \
+    || fail "the one-time pairing code is too large"
+}
 
-[[ -n "${ENROLLMENT_CODE:-}" ]] || fail "a one-time pairing code is required on standard input"
-[[ "$(printf '%s' "$ENROLLMENT_CODE" | wc -c | tr -d ' ')" -le "$MAX_ENROLLMENT_CODE_BYTES" ]] \
-  || fail "the one-time pairing code is too large"
+host_type() {
+  case "$(uname -s)" in
+    Darwin) printf 'macos-launchd\n' ;;
+    Linux) printf 'linux-systemd\n' ;;
+    *) fail "automatic bridge installation requires macOS or Linux" ;;
+  esac
+}
+
+preflight_hermes() {
+  local python="$1"
+  local runtime_version="$2"
+  "$python" - "$API_URL" "$runtime_version" "$(host_type)" <<'PY'
+import json
+import sys
+import urllib.error
+import urllib.request
+
+api_url, runtime_version, host_type = sys.argv[1:]
+payload = {
+    "pluginVersion": "0.3.0-rc.2",
+    "openCoreVersion": runtime_version or None,
+    "runtimeType": "hermes",
+    "hostType": host_type,
+    "apiContractVersion": "v2",
+    "websocketContractVersion": "bridge.v1",
+    "capabilities": [
+        "clawchat.runtime.hermes",
+        "clawchat.bridge.rotating_credentials.v1",
+        "clawchat.agent_replica_sync",
+        "clawchat.runtime.structured_jobs",
+        "clawchat.runtime.structured_output",
+        "clawchat.marketplace.tools",
+    ],
+}
+request = urllib.request.Request(
+    api_url.rstrip("/") + "/api/v1/bridge/compatibility/check",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(request, timeout=15) as response:
+        result = json.load(response)
+except urllib.error.HTTPError as error:
+    if error.code == 404:
+        print("Compatibility preflight is not deployed yet; enrollment will enforce the current policy.")
+        raise SystemExit(0)
+    raise
+level = result.get("level", "unsupported")
+mode = result.get("operatingMode", "blocked")
+print(f"Compatibility: {level} ({mode} mode) for Hermes {runtime_version or 'unknown'}")
+disabled = result.get("disabledCapabilities") or []
+if disabled:
+    print("Safe mode disables: " + ", ".join(disabled))
+if not result.get("compatible"):
+    raise SystemExit("This Hermes version is not compatible with the current Relay bridge policy.")
+PY
+}
+
+preflight_openclaw() {
+  local runtime_version="$1"
+  node --input-type=module - "$API_URL" "$runtime_version" "$(host_type)" <<'JS'
+const [apiUrl, runtimeVersion, hostType] = process.argv.slice(2);
+const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/v1/bridge/compatibility/check`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    pluginVersion: "2026.7.31-rc.1",
+    openCoreVersion: runtimeVersion || undefined,
+    runtimeType: "openclaw",
+    hostType,
+    apiContractVersion: "v2",
+    websocketContractVersion: "bridge.v1",
+    capabilities: [
+      "clawchat.runtime.openclaw",
+      "clawchat.bridge.rotating_credentials.v1",
+      "clawchat.agent_replica_sync",
+      "clawchat.runtime.structured_jobs",
+      "clawchat.runtime.structured_output",
+      "clawchat.attachments.local_media",
+    ],
+  }),
+});
+if (response.status === 404) {
+  console.log("Compatibility preflight is not deployed yet; enrollment will enforce the current policy.");
+  process.exit(0);
+}
+if (!response.ok) throw new Error(`Compatibility preflight failed: HTTP ${response.status}`);
+const result = await response.json();
+console.log(`Compatibility: ${result.level} (${result.operatingMode} mode) for OpenClaw ${runtimeVersion || "unknown"}`);
+if (result.disabledCapabilities?.length) console.log(`Safe mode disables: ${result.disabledCapabilities.join(", ")}`);
+if (!result.compatible) throw new Error("This OpenClaw version is not compatible with the current Relay bridge policy.");
+JS
+}
 
 install_hermes() {
   [[ -n "$RUNTIME_PATH" ]] || fail "--runtime-path is required for Hermes Agent"
@@ -103,6 +199,11 @@ install_hermes() {
     fi
   done
   [[ -n "$python" ]] || fail "Hermes Agent needs .venv/bin/python or venv/bin/python"
+
+  local runtime_version
+  runtime_version="$(git -C "$RUNTIME_PATH" describe --tags --exact-match 2>/dev/null || "$python" -c 'import importlib.metadata; print(importlib.metadata.version("hermes-agent"))' 2>/dev/null || true)"
+  preflight_hermes "$python" "$runtime_version"
+  read_enrollment_code
 
   "$ROOT/scripts/install-hermes-agent-bridge.sh" "$RUNTIME_PATH"
   printf '%s\n' "$ENROLLMENT_CODE" | (
@@ -123,6 +224,11 @@ install_openclaw() {
   local openclaw_home="${RUNTIME_PATH:-${OPENCLAW_HOME:-$HOME/.openclaw}}"
   [[ -d "$openclaw_home" ]] || fail "OpenClaw home does not exist: $openclaw_home"
   command -v openclaw >/dev/null || fail "OpenClaw is not available on PATH"
+
+  local runtime_version
+  runtime_version="$(openclaw --version 2>/dev/null | grep -Eo 'v?[0-9]{4}\.[0-9]+\.[0-9]+([-.+][A-Za-z0-9.-]+)?' | head -n 1 || true)"
+  preflight_openclaw "$runtime_version"
+  read_enrollment_code
 
   OPENCLAW_HOME="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" install
   printf '%s\n' "$ENROLLMENT_CODE" | OPENCLAW_HOME="$openclaw_home" \

@@ -17,6 +17,12 @@ export type ClawChatResolvedAccount = {
  deviceToken: string | null;
  /** The ClawChat workspaceId to subscribe to for inbound messages */
  workspaceId: string | null;
+ /** Server-negotiated runtime compatibility tier */
+ compatibilityLevel: string | null;
+ /** Full or capability-restricted safe operation */
+ operatingMode: string | null;
+ /** Capabilities authorized by Relay for this runtime version */
+ enabledCapabilities: string[];
  /** The OpenClaw agentId that handles messages arriving from this workspace */
  openclawAgentId: string | null;
  /** Optional Codex launcher for structured prompt bridge-control work */
@@ -78,6 +84,9 @@ export function resolveClawChatAccount(
  devicePublicId: null,
  deviceToken: null,
  workspaceId: null,
+ compatibilityLevel: null,
+ operatingMode: null,
+ enabledCapabilities: [],
  openclawAgentId: null,
  structuredPromptCommand: null,
  structuredPromptDefaultCwd: null,
@@ -104,6 +113,21 @@ export function resolveClawChatAccount(
  const workspaceId = ((account as Record<string, unknown>)?.workspaceId ??
  base.workspaceId ??
  null) as string | null;
+ const compatibilityLevel = pickString(
+  (account as Record<string, unknown>)?.compatibilityLevel,
+  base.compatibilityLevel,
+ );
+ const operatingMode = pickString(
+  (account as Record<string, unknown>)?.operatingMode,
+  base.operatingMode,
+ );
+ const enabledCapabilities = [
+  ...new Set(
+   (((account as Record<string, unknown>)?.enabledCapabilities ?? base.enabledCapabilities ?? []) as unknown[])
+    .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+    .map((value) => value.trim()),
+  ),
+ ];
  const openclawAgentId = ((account as Record<string, unknown>)?.openclawAgentId ??
  base.openclawAgentId ??
  null) as string | null;
@@ -138,6 +162,9 @@ export function resolveClawChatAccount(
  devicePublicId,
  deviceToken,
  workspaceId,
+ compatibilityLevel,
+ operatingMode,
+ enabledCapabilities,
  openclawAgentId,
  structuredPromptCommand,
  structuredPromptDefaultCwd,

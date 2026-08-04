@@ -16,6 +16,10 @@ mkdir -p "$HOME" "$RUNTIME/.venv/bin" "$FAKE_BIN"
 cat >"$RUNTIME/.venv/bin/python" <<'PYTHON'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == "-c" ]]; then
+  printf '0.15.1\n'
+  exit 0
+fi
 if [[ " $* " == *" -m clawchat_bridge.main enroll "* ]]; then
   IFS= read -r code
   [[ "$code" == "TEST-PAIRING-CODE" ]]
@@ -24,9 +28,16 @@ if [[ " $* " == *" -m clawchat_bridge.main enroll "* ]]; then
   mkdir -p "$HOME/.hermes/clawchat_bridge"
   printf '{}\n' >"$HOME/.hermes/clawchat_bridge/config.json"
   printf '%s\n' "$*" >"$HOME/enroll-arguments"
+  printf 'enroll\n' >>"$HOME/hermes-order"
   exit 0
 fi
 if [[ "${1:-}" == "-" ]]; then
+  if [[ "${2:-}" == https://* ]]; then
+    cat >/dev/null
+    printf 'Compatibility: compatible (safe mode) for Hermes 0.15.1\n'
+    printf 'preflight\n' >>"$HOME/hermes-order"
+    exit 0
+  fi
   plist_path="$2"
   cat >/dev/null
   : >"$plist_path"
@@ -63,12 +74,15 @@ printf 'TEST-PAIRING-CODE\n' | env HOME="$HOME" PATH="$FAKE_BIN:/usr/bin:/bin" \
 test -f "$RUNTIME/clawchat_bridge/main.py"
 grep -q -- '--code-stdin' "$HOME/enroll-arguments"
 grep -q 'bootstrap' "$HOME/launchctl-invocations"
+test "$(paste -sd, "$HOME/hermes-order")" = "preflight,enroll"
 printf 'Guided Hermes installer smoke test passed.\n'
 
 OPENCLAW_HOME="$TEST_ROOT/openclaw home"
 mkdir -p "$OPENCLAW_HOME"
 cat >"$FAKE_BIN/node" <<'NODE'
 #!/usr/bin/env bash
+cat >/dev/null
+printf 'preflight\n' >>"$HOME/openclaw-order"
 exit 0
 NODE
 cat >"$FAKE_BIN/npm" <<'NPM'
@@ -82,6 +96,7 @@ if [[ " $* " == *" relay-console enroll "* ]]; then
   IFS= read -r code
   [[ "$code" == "OPENCLAW-PAIRING-CODE" ]]
   [[ " $* " != *" OPENCLAW-PAIRING-CODE "* ]]
+  printf 'enroll\n' >>"$HOME/openclaw-order"
 fi
 printf '%s\n' "$*" >>"$HOME/openclaw-invocations"
 OPENCLAW
@@ -97,4 +112,6 @@ printf 'OPENCLAW-PAIRING-CODE\n' | env HOME="$HOME" PATH="$FAKE_BIN:/usr/bin:/bi
 test -f "$OPENCLAW_HOME/extensions/clawchat/openclaw.plugin.json"
 grep -q 'relay-console enroll' "$HOME/openclaw-invocations"
 grep -q 'gateway restart' "$HOME/openclaw-invocations"
+test "$(head -n 1 "$HOME/openclaw-order")" = "preflight"
+test "$(tail -n 1 "$HOME/openclaw-order")" = "enroll"
 printf 'Guided OpenClaw installer smoke test passed.\n'

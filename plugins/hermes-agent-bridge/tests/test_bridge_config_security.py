@@ -21,6 +21,9 @@ def test_bridge_config_uses_owner_only_permissions(tmp_path):
         device_token="device-token-sensitive",
         workspace_id="workspace-id",
         external_agent_ids=["my-hermes-agent"],
+        compatibility_level="compatible",
+        operating_mode="safe",
+        enabled_capabilities=["clawchat.runtime.hermes"],
     )
 
     config.save(path)
@@ -28,6 +31,8 @@ def test_bridge_config_uses_owner_only_permissions(tmp_path):
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
     assert json.loads(path.read_text())["deviceToken"] == "device-token-sensitive"
+    assert json.loads(path.read_text())["operatingMode"] == "safe"
+    assert json.loads(path.read_text())["enabledCapabilities"] == ["clawchat.runtime.hermes"]
 
 
 def test_bridge_config_refuses_symbolic_link_destination(tmp_path):
