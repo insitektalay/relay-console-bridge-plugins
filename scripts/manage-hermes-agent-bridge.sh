@@ -307,7 +307,25 @@ finally:
         os.unlink(temporary)
 PY
   launchctl bootout "gui/$UID/$LAUNCHD_LABEL" 2>/dev/null || true
-  launchctl bootstrap "gui/$UID" "$LAUNCHD_PLIST"
+  bootstrap_launchd_service
+}
+
+bootstrap_launchd_service() {
+  local attempt
+  local detail=""
+  for attempt in 1 2 3; do
+    if detail="$(launchctl bootstrap "gui/$UID" "$LAUNCHD_PLIST" 2>&1)"; then
+      return 0
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      # launchd can briefly retain the old job after bootout and return EIO.
+      # Repeating bootout is safe and gives its per-user domain time to settle.
+      launchctl bootout "gui/$UID/$LAUNCHD_LABEL" 2>/dev/null || true
+      sleep "0.$((attempt * 2))"
+    fi
+  done
+  [[ -z "$detail" ]] || printf '%s\n' "$detail" >&2
+  return 1
 }
 
 install_service() {

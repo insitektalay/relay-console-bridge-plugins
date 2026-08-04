@@ -92,12 +92,16 @@ printf 'TEST-PAIRING-CODE\n' | env HOME="$HOME" PATH="$FAKE_BIN:/usr/bin:/bin" \
     --runtime hermes \
     --api-url https://api.relayconsole.work \
     --runtime-path "$RUNTIME" \
-    --label "Test Mac · Hermes bridge"
+    --label "Test Mac · Hermes bridge" \
+    --agent "hugo-prototype" \
+    --agent "leo-metrics"
 
 test -f "$RUNTIME/clawchat_bridge/main.py"
 test -x "$HOME/.hermes/clawchat_bridge/runtime/bin/python"
 grep -F 'aiohttp>=3.10,<4' "$HOME/bridge-pip-invocations" >/dev/null
 grep -q -- '--code-stdin' "$HOME/enroll-arguments"
+grep -q -- '--agent hugo-prototype' "$HOME/enroll-arguments"
+grep -q -- '--agent leo-metrics' "$HOME/enroll-arguments"
 grep -q 'bootstrap' "$HOME/launchctl-invocations"
 test "$(paste -sd, "$HOME/hermes-order")" = "preflight,enroll"
 printf 'Guided Hermes installer smoke test passed.\n'

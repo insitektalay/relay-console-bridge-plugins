@@ -43,6 +43,11 @@ printf 'launchctl %s\n' "$*" >> "$TEST_STATE/service.log"
 if [[ "${1:-}" == "bootstrap" && -f "$TEST_STATE/fail-service" ]]; then
   exit 41
 fi
+if [[ "${1:-}" == "bootstrap" && -f "$TEST_STATE/fail-service-once" ]]; then
+  rm -f "$TEST_STATE/fail-service-once"
+  echo "Bootstrap failed: 5: Input/output error" >&2
+  exit 5
+fi
 SH
 
 cat > "$FAKE_BIN/systemctl" <<'SH'
@@ -176,6 +181,14 @@ PY
     "$ROOT/scripts/manage-hermes-agent-bridge.sh" update
   assert_absent "$hermes/clawchat_bridge/previous-version-marker"
   assert_file "$hermes/clawchat_bridge.rollback/previous-version-marker"
+  HOME="$home" HERMES_HOME="$hermes" HERMES_PYTHON="$explicit_python" HERMES_BRIDGE_CONFIG="$config" \
+    "$ROOT/scripts/manage-hermes-agent-bridge.sh" rollback
+  assert_file "$hermes/clawchat_bridge/previous-version-marker"
+
+  touch "$STATE/fail-service-once"
+  HOME="$home" HERMES_HOME="$hermes" HERMES_PYTHON="$explicit_python" HERMES_BRIDGE_CONFIG="$config" \
+    "$ROOT/scripts/manage-hermes-agent-bridge.sh" update
+  assert_absent "$STATE/fail-service-once"
 
   touch "$hermes/clawchat_bridge/dependency-failure-preserved-marker"
   rm -rf "$home/.hermes/clawchat_bridge/runtime"

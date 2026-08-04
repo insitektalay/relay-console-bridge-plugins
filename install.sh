@@ -6,6 +6,8 @@ RUNTIME=""
 API_URL=""
 RUNTIME_PATH=""
 DEVICE_LABEL="Relay Console bridge"
+HERMES_AGENTS=()
+HERMES_AGENT_COUNT=0
 MAX_ENROLLMENT_CODE_BYTES=4096
 
 usage() {
@@ -48,6 +50,12 @@ while [[ "$#" -gt 0 ]]; do
       DEVICE_LABEL="$2"
       shift 2
       ;;
+    --agent)
+      [[ "$#" -ge 2 ]] || fail "--agent requires a value"
+      HERMES_AGENTS+=("$2")
+      HERMES_AGENT_COUNT=$((HERMES_AGENT_COUNT + 1))
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -77,6 +85,13 @@ case "$API_URL" in
 esac
 
 [[ -n "${DEVICE_LABEL//[[:space:]]/}" ]] || fail "--label must not be empty"
+[[ "$HERMES_AGENT_COUNT" -le 250 ]] || fail "no more than 250 --agent values are allowed"
+for ((agent_index = 0; agent_index < HERMES_AGENT_COUNT; agent_index++)); do
+  agent="${HERMES_AGENTS[$agent_index]}"
+  [[ -n "${agent//[[:space:]]/}" ]] || fail "--agent must not be empty"
+  [[ "$agent" != *$'\n'* && "$agent" != *$'\r'* ]] || fail "--agent must not contain newlines"
+  [[ "$(printf '%s' "$agent" | wc -c | tr -d ' ')" -le 512 ]] || fail "--agent is too large"
+done
 
 read_enrollment_code() {
   if [[ -t 0 ]]; then
@@ -110,7 +125,7 @@ import urllib.request
 
 api_url, runtime_version, host_type = sys.argv[1:]
 payload = {
-    "pluginVersion": "0.3.0-rc.4",
+    "pluginVersion": "0.3.0-rc.5",
     "openCoreVersion": runtime_version or None,
     "runtimeType": "hermes",
     "hostType": host_type,
@@ -123,6 +138,7 @@ payload = {
         "clawchat.runtime.structured_jobs",
         "clawchat.runtime.structured_output",
         "clawchat.marketplace.tools",
+        "marketplaceHermesSkillInstall",
     ],
 }
 request = urllib.request.Request(
@@ -209,12 +225,20 @@ install_hermes() {
   HERMES_HOME="$RUNTIME_PATH" HERMES_PYTHON="$python" \
     "$ROOT/scripts/manage-hermes-agent-bridge.sh" prepare-runtime
   local bridge_python="${HERMES_BRIDGE_RUNTIME_DIR:-$HOME/.hermes/clawchat_bridge/runtime}/bin/python"
+  local agent_args=()
+  local agent
+  local agent_index
+  for ((agent_index = 0; agent_index < HERMES_AGENT_COUNT; agent_index++)); do
+    agent="${HERMES_AGENTS[$agent_index]}"
+    agent_args+=(--agent "$agent")
+  done
   printf '%s\n' "$ENROLLMENT_CODE" | (
     cd "$RUNTIME_PATH"
     "$bridge_python" -m clawchat_bridge.main enroll \
       --api-url "$API_URL" \
       --code-stdin \
-      --device-label "$DEVICE_LABEL"
+      --device-label "$DEVICE_LABEL" \
+      ${agent_args[@]+"${agent_args[@]}"}
   )
   unset ENROLLMENT_CODE
   HERMES_HOME="$RUNTIME_PATH" HERMES_PYTHON="$python" \
