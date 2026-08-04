@@ -14,14 +14,15 @@ LAUNCHD_LABEL="work.relayconsole.hermes-bridge"
 LAUNCHD_PLIST="$HOME/Library/LaunchAgents/$LAUNCHD_LABEL.plist"
 CONFIG="${HERMES_BRIDGE_CONFIG:-$HOME/.hermes/clawchat_bridge/config.json}"
 LOG_DIR="${HERMES_BRIDGE_LOG_DIR:-$HOME/.hermes/clawchat_bridge/logs}"
+RUNTIME_DIR="${HERMES_BRIDGE_RUNTIME_DIR:-$HOME/.hermes/clawchat_bridge/runtime}"
 ACTIVE="$HERMES/clawchat_bridge"
 ROLLBACK="$HERMES/clawchat_bridge.rollback"
 STAGING="$HERMES/.clawchat_bridge.candidate.$$"
 PREVIOUS="$HERMES/.clawchat_bridge.previous.$$"
-REQUIRED_AIOHTTP_VERSION="3.14.1"
+AIOHTTP_REQUIREMENT="aiohttp>=3.10,<4"
 
 cleanup() {
-  rm -rf "$STAGING"
+  rm -rf "$STAGING" "$RUNTIME_DIR.candidate.$$" "$RUNTIME_DIR.previous.$$"
 }
 trap cleanup EXIT
 
@@ -45,7 +46,8 @@ resolve_python() {
   return 1
 }
 
-PYTHON="$(resolve_python)"
+HERMES_PYTHON_EXECUTABLE="$(resolve_python)"
+BRIDGE_PYTHON="$RUNTIME_DIR/bin/python"
 
 platform_name() {
   uname -s
@@ -69,7 +71,7 @@ service_kind() {
       ;;
     *)
       echo "Automatic service installation is supported on Linux systemd and macOS launchd." >&2
-      echo "Run manually: $PYTHON -m clawchat_bridge.main --config $CONFIG run" >&2
+      echo "Run manually: $BRIDGE_PYTHON -m clawchat_bridge.main --config $CONFIG run" >&2
       return 1
       ;;
   esac
@@ -82,29 +84,122 @@ stage_files() {
   for source in "$ROOT"/plugins/hermes-agent-bridge/src/*.py; do
     install -m 600 "$source" "$STAGING/$(basename "$source")"
   done
-  "$PYTHON" -m py_compile "$STAGING"/*.py
+  "$BRIDGE_PYTHON" -m py_compile "$STAGING"/*.py
 }
 
-validate_runtime_dependencies() {
-  if ! "$PYTHON" -c '
-import importlib.metadata
-import sys
+hermes_import_paths() {
+  "$HERMES_PYTHON_EXECUTABLE" -c '
+import sysconfig
 
-required = sys.argv[1]
+paths = sysconfig.get_paths()
+for key in ("purelib", "platlib"):
+    value = paths.get(key)
+    if value:
+        print(value)
+'
+}
+
+validate_bridge_environment() {
+  local python="${1:-$BRIDGE_PYTHON}"
+  [[ -x "$python" ]] || return 1
+  "$python" -c '
+import importlib.metadata
+import re
+
 try:
     installed = importlib.metadata.version("aiohttp")
 except importlib.metadata.PackageNotFoundError:
     raise SystemExit(1)
-raise SystemExit(0 if installed == required else 2)
-' "$REQUIRED_AIOHTTP_VERSION"; then
-    echo "The Relay Console Hermes bridge requires aiohttp==$REQUIRED_AIOHTTP_VERSION in the existing Hermes environment." >&2
-    echo "Relay did not change Hermes. Install the pinned dependency yourself, then retry." >&2
+match = re.match(r"^(\d+)\.(\d+)", installed)
+if not match or int(match.group(1)) != 3 or int(match.group(2)) < 10:
+    raise SystemExit(2)
+import aiohttp
+'
+}
+
+create_bridge_environment() {
+  local candidate="$RUNTIME_DIR.candidate.$$"
+  local previous="$RUNTIME_DIR.previous.$$"
+  local bridge_site_packages
+  local hermes_paths
+  local path
+
+  rm -rf "$candidate" "$previous"
+  mkdir -p "$(dirname "$RUNTIME_DIR")"
+  chmod 700 "$(dirname "$RUNTIME_DIR")"
+
+  if ! "$HERMES_PYTHON_EXECUTABLE" -m venv "$candidate"; then
+    rm -rf "$candidate"
+    if command -v uv >/dev/null; then
+      uv venv --python "$HERMES_PYTHON_EXECUTABLE" "$candidate"
+    else
+      echo "Could not create the isolated Relay bridge Python environment." >&2
+      echo "Install Python venv support (or uv), then retry. Hermes was not changed." >&2
+      return 1
+    fi
+  fi
+
+  bridge_site_packages="$("$candidate/bin/python" -c 'import site; print(site.getsitepackages()[0])')"
+  [[ -n "$bridge_site_packages" ]] || {
+    echo "Could not locate the isolated bridge site-packages directory." >&2
+    return 1
+  }
+  mkdir -p "$bridge_site_packages"
+
+  if "$candidate/bin/python" -m pip --version >/dev/null 2>&1; then
+    "$candidate/bin/python" -m pip install --disable-pip-version-check "$AIOHTTP_REQUIREMENT"
+  elif command -v uv >/dev/null; then
+    uv pip install --python "$candidate/bin/python" "$AIOHTTP_REQUIREMENT"
+  else
+    echo "The isolated Relay bridge environment has no package installer." >&2
+    echo "Install uv or ensure Python venv includes pip, then retry. Hermes was not changed." >&2
     return 1
   fi
+
+  hermes_paths="$(hermes_import_paths)"
+  {
+    printf '%s\n' "$HERMES"
+    while IFS= read -r path; do
+      [[ -z "$path" || "$path" == "$HERMES" ]] || printf '%s\n' "$path"
+    done <<< "$hermes_paths"
+  } > "$bridge_site_packages/relay-console-hermes.pth"
+
+  validate_bridge_environment "$candidate/bin/python" || {
+    echo "The isolated Relay bridge environment did not install a compatible aiohttp 3.x release." >&2
+    return 1
+  }
+
+  [[ -d "$RUNTIME_DIR" ]] && mv "$RUNTIME_DIR" "$previous"
+  if ! mv "$candidate" "$RUNTIME_DIR" || ! validate_bridge_environment; then
+    rm -rf "$RUNTIME_DIR"
+    [[ -d "$previous" ]] && mv "$previous" "$RUNTIME_DIR"
+    echo "Could not activate the isolated Relay bridge environment." >&2
+    return 1
+  fi
+  rm -rf "$previous"
+  chmod -R go-rwx "$RUNTIME_DIR"
+}
+
+ensure_bridge_environment() {
+  local pth=""
+  local required_path=""
+  if validate_bridge_environment; then
+    pth="$("$BRIDGE_PYTHON" -c 'import site; print(site.getsitepackages()[0])')/relay-console-hermes.pth"
+    if [[ -f "$pth" ]] && grep -Fx "$HERMES" "$pth" >/dev/null; then
+      while IFS= read -r required_path; do
+        if [[ -n "$required_path" ]] && ! grep -Fx "$required_path" "$pth" >/dev/null; then
+          create_bridge_environment
+          return
+        fi
+      done <<< "$(hermes_import_paths)"
+      return 0
+    fi
+  fi
+  create_bridge_environment
 }
 
 validate_service_prerequisites() {
-  validate_runtime_dependencies
+  ensure_bridge_environment
   [[ -f "$CONFIG" ]] || {
     echo "Bridge config is missing at $CONFIG. Enroll the device before enabling the service." >&2
     return 1
@@ -117,7 +212,7 @@ validate_service_prerequisites() {
 write_systemd_service() {
   local unit="$HOME/.config/systemd/user/$SERVICE.service"
   mkdir -p "$(dirname "$unit")"
-  "$PYTHON" - "$unit" "$HERMES" "$PYTHON" "$CONFIG" <<'PY'
+  "$HERMES_PYTHON_EXECUTABLE" - "$unit" "$HERMES" "$BRIDGE_PYTHON" "$CONFIG" <<'PY'
 import os
 import pathlib
 import sys
@@ -180,7 +275,7 @@ PY
 write_launchd_service() {
   mkdir -p "$HOME/Library/LaunchAgents" "$LOG_DIR"
   chmod 700 "$LOG_DIR"
-  "$PYTHON" - "$LAUNCHD_PLIST" "$LAUNCHD_LABEL" "$PYTHON" "$CONFIG" "$HERMES" "$LOG_DIR" <<'PY'
+  "$HERMES_PYTHON_EXECUTABLE" - "$LAUNCHD_PLIST" "$LAUNCHD_LABEL" "$BRIDGE_PYTHON" "$CONFIG" "$HERMES" "$LOG_DIR" <<'PY'
 import os
 import pathlib
 import plistlib
@@ -243,7 +338,7 @@ restore_service_best_effort() {
 run_bridge() {
   (
     cd "$HERMES"
-    "$PYTHON" -m clawchat_bridge.main --config "$CONFIG" "$@"
+    "$BRIDGE_PYTHON" -m clawchat_bridge.main --config "$CONFIG" "$@"
   )
 }
 
@@ -277,6 +372,7 @@ activate_candidate() {
 }
 
 install_or_update() {
+  ensure_bridge_environment
   stage_files
   activate_candidate
 }
@@ -289,7 +385,7 @@ rollback_active() {
   [[ -d "$ACTIVE" ]] && mv "$ACTIVE" "$PREVIOUS"
   mv "$ROLLBACK" "$ACTIVE"
 
-  if ! "$PYTHON" -m py_compile "$ACTIVE/main.py" || ! install_service; then
+  if ! "$BRIDGE_PYTHON" -m py_compile "$ACTIVE/main.py" || ! install_service; then
     stop_service
     rm -rf "$ACTIVE"
     [[ -d "$PREVIOUS" ]] && mv "$PREVIOUS" "$ACTIVE"
@@ -304,6 +400,10 @@ rollback_active() {
 }
 
 case "$COMMAND" in
+  prepare-runtime)
+    ensure_bridge_environment
+    echo "Prepared isolated Relay Console bridge environment at $RUNTIME_DIR. Hermes packages were not changed."
+    ;;
   install|update)
     install_or_update
     ;;
@@ -327,7 +427,8 @@ case "$COMMAND" in
     esac
     ;;
   health)
-    "$PYTHON" -m py_compile "$ACTIVE/main.py"
+    validate_service_prerequisites
+    "$BRIDGE_PYTHON" -m py_compile "$ACTIVE/main.py"
     run_bridge status >/dev/null
     echo "Relay Console Hermes bridge files and redacted configuration are valid."
     ;;
@@ -350,11 +451,11 @@ case "$COMMAND" in
     if [[ "$(platform_name)" == "Linux" ]] && command -v systemctl >/dev/null; then
       systemctl --user daemon-reload || true
     fi
-    rm -rf "$ACTIVE" "$ROLLBACK"
-    echo "Removed Relay Console bridge code and service. Hermes and $CONFIG were not removed."
+    rm -rf "$ACTIVE" "$ROLLBACK" "$RUNTIME_DIR"
+    echo "Removed Relay Console bridge code, isolated environment, and service. Hermes and $CONFIG were not removed."
     ;;
   *)
-    echo "usage: $0 install|update|rollback|rotate-credential|status|health|logs|uninstall /path/to/hermes" >&2
+    echo "usage: $0 prepare-runtime|install|update|rollback|rotate-credential|status|health|logs|uninstall /path/to/hermes" >&2
     exit 2
     ;;
 esac

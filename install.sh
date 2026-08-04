@@ -110,7 +110,7 @@ import urllib.request
 
 api_url, runtime_version, host_type = sys.argv[1:]
 payload = {
-    "pluginVersion": "0.3.0-rc.2",
+    "pluginVersion": "0.3.0-rc.3",
     "openCoreVersion": runtime_version or None,
     "runtimeType": "hermes",
     "hostType": host_type,
@@ -206,9 +206,12 @@ install_hermes() {
   read_enrollment_code
 
   "$ROOT/scripts/install-hermes-agent-bridge.sh" "$RUNTIME_PATH"
+  HERMES_HOME="$RUNTIME_PATH" HERMES_PYTHON="$python" \
+    "$ROOT/scripts/manage-hermes-agent-bridge.sh" prepare-runtime
+  local bridge_python="${HERMES_BRIDGE_RUNTIME_DIR:-$HOME/.hermes/clawchat_bridge/runtime}/bin/python"
   printf '%s\n' "$ENROLLMENT_CODE" | (
     cd "$RUNTIME_PATH"
-    "$python" -m clawchat_bridge.main enroll \
+    "$bridge_python" -m clawchat_bridge.main enroll \
       --api-url "$API_URL" \
       --code-stdin \
       --device-label "$DEVICE_LABEL"

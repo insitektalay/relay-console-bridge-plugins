@@ -70,28 +70,28 @@ the Hermes or OpenClaw plugins from this repository.
 ## Hermes Agent on macOS or Linux
 
 The current bridge requires a source installation of Hermes Agent with either
-`.venv/bin/python` (preferred) or the legacy `venv/bin/python`. It also requires
-`aiohttp==3.14.1`, matching the supported Hermes release's own `messaging`
-extra. Relay's bridge scripts verify this dependency but never install or
-upgrade packages in the user-managed Hermes environment.
+`.venv/bin/python` (preferred) or the legacy `venv/bin/python`. The lifecycle
+creates an isolated bridge environment under
+`~/.hermes/clawchat_bridge/runtime`, installs a compatible
+`aiohttp>=3.10,<4` release there, and links the selected Hermes checkout and
+environment for Hermes runtime APIs. The user's Hermes packages are never
+installed, removed, or upgraded by Relay.
 
-1. If your Hermes installation does not already include its `messaging` extra,
-   install the exact bridge dependency yourself using that environment's package
-   manager. For a standard source checkout:
-
-   ```bash
-   cd /path/to/hermes-agent
-   .venv/bin/python -m pip install 'aiohttp==3.14.1'
-   ```
-
-   This is a user-authorized Hermes-environment change, not an action Relay
-   Console performs.
-
-2. Copy the bridge code into the existing Hermes checkout:
+1. Copy the bridge code into the existing Hermes checkout:
 
    ```bash
    cd /path/to/relay-console-bridge-plugins
    scripts/install-hermes-agent-bridge.sh /path/to/hermes-agent
+   ```
+
+2. Prepare the bridge-owned environment. If the checkout contains both
+   `.venv` and `venv`, set `HERMES_PYTHON` explicitly to the environment used
+   by that Hermes installation:
+
+   ```bash
+   cd /path/to/relay-console-bridge-plugins
+   HERMES_HOME=/path/to/hermes-agent \
+     scripts/manage-hermes-agent-bridge.sh prepare-runtime
    ```
 
 3. In Relay Console, create a one-time runtime-device enrollment code. Then
@@ -100,7 +100,7 @@ upgrade packages in the user-managed Hermes environment.
    ```bash
    cd /path/to/hermes-agent
    read -r -s RELAY_ENROLLMENT_CODE
-   .venv/bin/python -m clawchat_bridge.main enroll \
+   ~/.hermes/clawchat_bridge/runtime/bin/python -m clawchat_bridge.main enroll \
      --api-url https://your-relay-backend.up.railway.app \
      --code "$RELAY_ENROLLMENT_CODE" \
      --device-label "Office Mac Hermes bridge"
@@ -121,10 +121,9 @@ upgrade packages in the user-managed Hermes environment.
      scripts/manage-hermes-agent-bridge.sh install
    ```
 
-   If the checkout contains both `.venv` and legacy `venv` directories, set
-   `HERMES_PYTHON` to the interpreter used by the existing Hermes/bridge
-   service. The lifecycle validates that exact environment and records it in
-   the service definition instead of guessing between two installations:
+   The service records the bridge-owned interpreter rather than the Hermes
+   interpreter. `HERMES_PYTHON` selects which Hermes package environment is
+   linked read-only when both `.venv` and legacy `venv` directories exist:
 
    ```bash
    HERMES_HOME=/path/to/hermes-agent \

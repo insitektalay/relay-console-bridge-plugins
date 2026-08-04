@@ -104,7 +104,7 @@ export function validateManifest({
 
   if (hermes) {
     add(errors, hermes.version === hermesPlugin.version, "Hermes manifest and plugin versions differ");
-    add(errors, hermes.runtimeDependencies?.python?.aiohttp === "3.14.1", "Hermes bridge aiohttp compatibility pin is missing or incorrect");
+    add(errors, hermes.runtimeDependencies?.python?.aiohttp === ">=3.10,<4", "Hermes bridge aiohttp compatibility range is missing or incorrect");
     add(errors, hermesPlugin.pythonDependencies?.aiohttp === hermes.runtimeDependencies?.python?.aiohttp, "Hermes manifest and plugin aiohttp pins differ");
     add(errors, hermes.capabilities?.includes("runtime-connector-v3"), "Hermes runtime connector v3 capability is missing");
     add(errors, hermes.capabilities?.includes("runtime-connector-v2-fallback"), "Hermes runtime connector v2 fallback capability is missing");

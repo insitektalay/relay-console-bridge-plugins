@@ -70,8 +70,30 @@ SH
 
 cat > "$FAKE_BIN/python" <<'SH'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "-m" && "${2:-}" == "venv" ]]; then
+  runtime="${3:?missing bridge runtime path}"
+  mkdir -p "$runtime/bin" "$runtime/lib/python-test/site-packages"
+  ln -sf "$TEST_STATE/../fake-bin/python" "$runtime/bin/python"
+  exit 0
+fi
+if [[ "${1:-}" == "-m" && "${2:-}" == "pip" ]]; then
+  [[ ! -f "$TEST_STATE/fail-bridge-dependency-install" ]] || exit 45
+  runtime="$(cd "$(dirname "$0")/.." && pwd)"
+  [[ ! -f "$runtime/lib/python-test/site-packages/relay-console-hermes.pth" ]] || exit 46
+  printf 'pip %s\n' "$*" >> "$TEST_STATE/python.log"
+  exit 0
+fi
+if [[ "${1:-}" == "-c" && "${2:-}" == *"sysconfig.get_paths"* ]]; then
+  printf '%s\n' "$TEST_STATE/hermes-site-packages"
+  exit 0
+fi
+if [[ "${1:-}" == "-c" && "${2:-}" == *"site.getsitepackages"* ]]; then
+  runtime="$(cd "$(dirname "$0")/.." && pwd)"
+  printf '%s\n' "$runtime/lib/python-test/site-packages"
+  exit 0
+fi
 if [[ "${1:-}" == "-c" && "${2:-}" == *"importlib.metadata"* ]]; then
-  [[ ! -f "$TEST_STATE/fail-python-dependency" ]]
+  printf '3.13.3\n'
   exit
 fi
 if [[ "${1:-}" == "-m" && "${2:-}" == "clawchat_bridge.main" ]]; then
@@ -126,9 +148,19 @@ run_macos_hermes_contract() {
   HOME="$home" HERMES_HOME="$hermes" HERMES_PYTHON="$explicit_python" HERMES_BRIDGE_CONFIG="$config" \
     "$ROOT/scripts/manage-hermes-agent-bridge.sh" install
   assert_file "$hermes/clawchat_bridge/main.py"
+  local bridge_python="$home/.hermes/clawchat_bridge/runtime/bin/python"
+  local bridge_site="$home/.hermes/clawchat_bridge/runtime/lib/python-test/site-packages"
+  assert_file "$bridge_python"
+  assert_file "$bridge_site/relay-console-hermes.pth"
+  grep -Fx "$hermes" "$bridge_site/relay-console-hermes.pth" >/dev/null \
+    || fail "bridge environment does not import the Hermes checkout"
+  grep -Fx "$STATE/hermes-site-packages" "$bridge_site/relay-console-hermes.pth" >/dev/null \
+    || fail "bridge environment does not inherit the selected Hermes environment"
+  grep -F 'aiohttp>=3.10,<4' "$STATE/python.log" >/dev/null \
+    || fail "bridge-owned aiohttp range was not installed"
   assert_file "$home/Library/LaunchAgents/work.relayconsole.hermes-bridge.plist"
 
-  "$REAL_PYTHON" - "$home/Library/LaunchAgents/work.relayconsole.hermes-bridge.plist" "$hermes" "$config" "$explicit_python" <<'PY'
+  "$REAL_PYTHON" - "$home/Library/LaunchAgents/work.relayconsole.hermes-bridge.plist" "$hermes" "$config" "$bridge_python" <<'PY'
 import plistlib
 import sys
 
@@ -146,13 +178,14 @@ PY
   assert_file "$hermes/clawchat_bridge.rollback/previous-version-marker"
 
   touch "$hermes/clawchat_bridge/dependency-failure-preserved-marker"
-  touch "$STATE/fail-python-dependency"
+  rm -rf "$home/.hermes/clawchat_bridge/runtime"
+  touch "$STATE/fail-bridge-dependency-install"
   if HOME="$home" HERMES_HOME="$hermes" HERMES_PYTHON="$explicit_python" HERMES_BRIDGE_CONFIG="$config" \
     "$ROOT/scripts/manage-hermes-agent-bridge.sh" update; then
-    fail "Hermes update unexpectedly succeeded without its pinned bridge dependency"
+    fail "Hermes update unexpectedly succeeded when bridge dependency installation failed"
   fi
   assert_file "$hermes/clawchat_bridge/dependency-failure-preserved-marker"
-  rm -f "$STATE/fail-python-dependency"
+  rm -f "$STATE/fail-bridge-dependency-install"
 
   HOME="$home" HERMES_HOME="$hermes" HERMES_PYTHON="$explicit_python" HERMES_BRIDGE_CONFIG="$config" \
     "$ROOT/scripts/manage-hermes-agent-bridge.sh" rollback
@@ -172,6 +205,7 @@ PY
     "$ROOT/scripts/manage-hermes-agent-bridge.sh" uninstall
   assert_absent "$hermes/clawchat_bridge"
   assert_absent "$hermes/clawchat_bridge.rollback"
+  assert_absent "$home/.hermes/clawchat_bridge/runtime"
   assert_file "$hermes/existing-hermes-installation"
   assert_file "$config"
 }

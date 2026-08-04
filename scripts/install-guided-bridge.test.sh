@@ -11,11 +11,34 @@ trap cleanup EXIT
 HOME="$TEST_ROOT/home"
 RUNTIME="$TEST_ROOT/hermes agent"
 FAKE_BIN="$TEST_ROOT/bin"
+export HOME RUNTIME
 mkdir -p "$HOME" "$RUNTIME/.venv/bin" "$FAKE_BIN"
 
 cat >"$RUNTIME/.venv/bin/python" <<'PYTHON'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == "-m" && "${2:-}" == "venv" ]]; then
+  runtime="${3:?missing bridge runtime path}"
+  mkdir -p "$runtime/bin" "$runtime/lib/python-test/site-packages"
+  cp "$0" "$runtime/bin/python"
+  chmod +x "$runtime/bin/python"
+  exit 0
+fi
+if [[ "${1:-}" == "-m" && "${2:-}" == "pip" ]]; then
+  runtime="$(cd "$(dirname "$0")/.." && pwd)"
+  [[ ! -f "$runtime/lib/python-test/site-packages/relay-console-hermes.pth" ]]
+  printf '%s\n' "$*" >>"$HOME/bridge-pip-invocations"
+  exit 0
+fi
+if [[ "${1:-}" == "-c" && "${2:-}" == *"sysconfig.get_paths"* ]]; then
+  printf '%s\n' "$RUNTIME/.venv/lib/python-test/site-packages"
+  exit 0
+fi
+if [[ "${1:-}" == "-c" && "${2:-}" == *"site.getsitepackages"* ]]; then
+  runtime="$(cd "$(dirname "$0")/.." && pwd)"
+  printf '%s\n' "$runtime/lib/python-test/site-packages"
+  exit 0
+fi
 if [[ "${1:-}" == "-c" ]]; then
   printf '0.15.1\n'
   exit 0
@@ -72,6 +95,8 @@ printf 'TEST-PAIRING-CODE\n' | env HOME="$HOME" PATH="$FAKE_BIN:/usr/bin:/bin" \
     --label "Test Mac · Hermes bridge"
 
 test -f "$RUNTIME/clawchat_bridge/main.py"
+test -x "$HOME/.hermes/clawchat_bridge/runtime/bin/python"
+grep -F 'aiohttp>=3.10,<4' "$HOME/bridge-pip-invocations" >/dev/null
 grep -q -- '--code-stdin' "$HOME/enroll-arguments"
 grep -q 'bootstrap' "$HOME/launchctl-invocations"
 test "$(paste -sd, "$HOME/hermes-order")" = "preflight,enroll"

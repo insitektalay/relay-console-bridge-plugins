@@ -10,9 +10,11 @@ are not copied into the user's Hermes checkout.
 Use `../../docs/INSTALL.md` for install, enrollment, service, health, logs,
 update, rollback, and uninstall commands. Real configuration belongs only at
 `~/.hermes/clawchat_bridge/config.json`; `config.example.json` contains no usable
-credentials. The bridge requires `aiohttp==3.14.1` in the existing Hermes
-environment. The lifecycle script verifies that pin and never installs or
-updates the dependency for the user.
+credentials. The lifecycle creates a bridge-owned Python environment, installs
+`aiohttp>=3.10,<4` there, and links the selected Hermes checkout and environment
+for runtime APIs. It does not install or upgrade packages in the existing Hermes
+environment. The lifecycle verifies its private dependency range and never
+updates dependencies in the user's Hermes environment.
 
 Bridge API v2 rotates the device credential during every authentication. The
 bridge atomically saves the replacement to its owner-only config before using
