@@ -170,6 +170,7 @@ def _bridge_device_metadata() -> dict[str, Any]:
         "capabilities": BRIDGE_CAPABILITIES,
     }
 DEFAULT_DEVICE_LABEL = "Relay Console Hermes bridge"
+MAX_ENROLLMENT_CODE_BYTES = 4_096
 DEFAULT_MODEL = "gpt-5.4"
 DEFAULT_DISABLED_TOOLSETS: list[str] = []
 NATIVE_HARNESS_REQUIRED_TOOLS = {
@@ -10042,8 +10043,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     enroll_parser = sub.add_parser("enroll", help="Enroll this computer as a Relay Console Hermes bridge device")
     enroll_parser.add_argument("--api-url", required=True, help="Your Relay Console Railway backend URL")
-    enroll_parser.add_argument("--code", required=True, help="One-time bridge enrollment code from Relay Console")
-    enroll_parser.add_argument("--agent", action="append", dest="agents", required=True, help="Hermes external agent ID to register. Repeat for multiple agents.")
+    enrollment_code = enroll_parser.add_mutually_exclusive_group(required=True)
+    enrollment_code.add_argument("--code", help="One-time bridge enrollment code from Relay Console")
+    enrollment_code.add_argument(
+        "--code-stdin",
+        action="store_true",
+        help="Read the one-time bridge enrollment code from standard input",
+    )
+    enroll_parser.add_argument("--agent", action="append", dest="agents", default=[], help="Legacy Hermes external agent ID to register. Repeat for multiple agents.")
     enroll_parser.add_argument("--device-label", default=DEFAULT_DEVICE_LABEL)
 
     run_parser = sub.add_parser("run", help="Connect to Relay Console and process Hermes runtime dispatches")
@@ -10063,7 +10070,17 @@ async def async_main(argv: list[str] | None = None) -> int:
     )
 
     if args.command == "enroll":
-        config = await enroll(args.api_url, args.code, args.agents, args.device_label, args.config)
+        code = args.code
+        if args.code_stdin:
+            if sys.stdin.isatty():
+                parser.error("--code-stdin requires redirected standard input")
+            code_input = sys.stdin.read(MAX_ENROLLMENT_CODE_BYTES + 1)
+            if len(code_input.encode("utf-8")) > MAX_ENROLLMENT_CODE_BYTES:
+                parser.error("the bridge enrollment code from standard input is too large")
+            code = code_input.strip()
+            if not code:
+                parser.error("standard input did not contain a bridge enrollment code")
+        config = await enroll(args.api_url, code, args.agents, args.device_label, args.config)
         print(f"Enrolled Relay Console Hermes bridge for workspace {config.workspace_name or config.workspace_id or '<unknown>'}")
         print(f"Config saved to {args.config or _config_path()}")
         print(f"Registered agent externalId(s): {', '.join(config.external_agent_ids)}")

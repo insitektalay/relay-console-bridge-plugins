@@ -17,6 +17,12 @@ Relay Console never installs Hermes Agent or OpenClaw. Install, authenticate,
 update, and start your chosen runtime using its official documentation before
 installing a bridge.
 
+Relay Console's guided setup downloads a reviewed commit of this repository and
+runs the top-level `install.sh`. That installer reads the one-time enrollment
+code from standard input, installs the selected bridge, enrolls it, starts it,
+and checks its local health. The detailed manual operations below remain
+available for administrators who do not use guided setup.
+
 ## How many bridges to install
 
 This repository contains two bridge implementations: one for Hermes and one

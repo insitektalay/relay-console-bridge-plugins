@@ -3,7 +3,7 @@ import stat
 
 import pytest
 
-from clawchat_bridge.main import BridgeConfig, _normalize_api_url
+from clawchat_bridge.main import BridgeConfig, _normalize_api_url, build_parser
 
 
 def test_relay_api_url_requires_https(monkeypatch):
@@ -47,3 +47,16 @@ def test_bridge_config_refuses_symbolic_link_destination(tmp_path):
         config.save(path)
 
     assert target.read_text(encoding="utf-8") == "unchanged"
+
+
+def test_guided_enrollment_accepts_stdin_without_a_legacy_agent_id():
+    args = build_parser().parse_args([
+        "enroll",
+        "--api-url",
+        "https://relay.example.com",
+        "--code-stdin",
+    ])
+
+    assert args.code_stdin is True
+    assert args.code is None
+    assert args.agents == []
