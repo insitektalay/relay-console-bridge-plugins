@@ -104,9 +104,21 @@ BRIDGE_CAPABILITIES = [
     HOST_CRON_CAPABILITY,
     HOST_SCHEDULER_CAPABILITY,
 ]
-PLUGIN_VERSION = "0.3.0-rc.3"
+PLUGIN_VERSION = "0.3.0-rc.4"
 API_CONTRACT_VERSION = "v2"
 WEBSOCKET_CONTRACT_VERSION = "bridge.v1"
+
+
+def _bridge_auth_tokens(auth: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Return HTTP and websocket tokens without crossing their security scopes."""
+    tokens = auth.get("tokens") if isinstance(auth.get("tokens"), dict) else {}
+    legacy_token = tokens.get("token") or auth.get("token")
+    access_token = tokens.get("accessToken") or auth.get("accessToken") or legacy_token
+    websocket_token = tokens.get("wsToken") or auth.get("wsToken") or legacy_token
+    return (
+        access_token if isinstance(access_token, str) and access_token else None,
+        websocket_token if isinstance(websocket_token, str) and websocket_token else None,
+    )
 
 
 def _safe_native_provision_error_code(error: Exception) -> str:
@@ -8214,10 +8226,10 @@ class ClawChatHermesBridge:
         async with aiohttp.ClientSession() as session:
             self.session = session
             auth = await self._authenticate_device(session)
-            tokens = auth.get("tokens") or {}
-            access_token = tokens.get("accessToken") or auth.get("accessToken")
-            ws_token = access_token or tokens.get("wsToken") or auth.get("wsToken") or auth.get("token")
-            self.access_token = access_token or tokens.get("wsToken") or auth.get("wsToken") or auth.get("token")
+            access_token, ws_token = _bridge_auth_tokens(auth)
+            self.access_token = access_token
+            if not access_token:
+                raise RuntimeError("ClawChat bridge auth response did not include accessToken")
             if not ws_token:
                 raise RuntimeError("ClawChat bridge auth response did not include wsToken")
             await self._flush_provision_callback_outbox()
@@ -9985,7 +9997,7 @@ class ClawChatHermesBridge:
         token = self.access_token
         if not token:
             auth = await self._authenticate_device(self.session)
-            token = ((auth.get("tokens") or {}).get("accessToken") or auth.get("accessToken") or (auth.get("tokens") or {}).get("wsToken") or auth.get("wsToken") or auth.get("token"))
+            token, _websocket_token = _bridge_auth_tokens(auth)
             self.access_token = token
         if not token:
             raise RuntimeError("ClawChat bridge auth response did not include accessToken")

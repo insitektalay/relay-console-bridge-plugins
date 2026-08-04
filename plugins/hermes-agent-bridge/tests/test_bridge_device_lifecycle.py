@@ -5,12 +5,36 @@ from clawchat_bridge import main
 from clawchat_bridge.main import BridgeConfig, rotate_device_credential
 
 
+def test_bridge_auth_tokens_keep_http_and_websocket_scopes_separate():
+    access_token, websocket_token = main._bridge_auth_tokens(
+        {"tokens": {"accessToken": "http-access", "wsToken": "websocket-access"}}
+    )
+
+    assert access_token == "http-access"
+    assert websocket_token == "websocket-access"
+
+
+def test_bridge_auth_tokens_do_not_cross_fallback_between_scopes():
+    assert main._bridge_auth_tokens({"tokens": {"accessToken": "http-only"}}) == (
+        "http-only",
+        None,
+    )
+    assert main._bridge_auth_tokens({"tokens": {"wsToken": "websocket-only"}}) == (
+        None,
+        "websocket-only",
+    )
+
+
+def test_bridge_auth_tokens_support_legacy_single_token():
+    assert main._bridge_auth_tokens({"token": "legacy"}) == ("legacy", "legacy")
+
+
 def test_bridge_metadata_declares_runtime_host_and_protocol_contracts():
     metadata = main._bridge_device_metadata()
 
     assert metadata["runtimeType"] == "hermes"
     assert metadata["hostType"] in {"macos-launchd", "linux-systemd"}
-    assert metadata["pluginVersion"] == "0.3.0-rc.3"
+    assert metadata["pluginVersion"] == "0.3.0-rc.4"
     assert metadata["apiContractVersion"] == "v2"
     assert metadata["websocketContractVersion"] == "bridge.v1"
     assert "clawchat.runtime.hermes" in metadata["capabilities"]

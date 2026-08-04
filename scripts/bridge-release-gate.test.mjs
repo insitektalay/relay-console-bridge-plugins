@@ -161,7 +161,7 @@ test("Hermes runtime dependency drift fails closed", () => {
 
   inputs.manifest.plugins[0].runtimeDependencies.python.aiohttp = "latest";
   const unpinnedErrors = validateManifest(inputs);
-  assert(unpinnedErrors.some((error) => error.includes("compatibility pin is missing or incorrect")));
+  assert(unpinnedErrors.some((error) => error.includes("compatibility range is missing or incorrect")));
 });
 
 test("stable git evidence requires a clean exact-tagged HEAD", () => {
