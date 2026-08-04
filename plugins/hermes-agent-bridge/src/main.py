@@ -26,7 +26,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MethodType
-from typing import Any
+from typing import Any, Iterable
 from uuid import uuid4
 
 try:
@@ -104,7 +104,7 @@ BRIDGE_CAPABILITIES = [
     HOST_CRON_CAPABILITY,
     HOST_SCHEDULER_CAPABILITY,
 ]
-PLUGIN_VERSION = "0.3.0-rc.5"
+PLUGIN_VERSION = "0.3.0-rc.6"
 API_CONTRACT_VERSION = "v2"
 WEBSOCKET_CONTRACT_VERSION = "bridge.v1"
 
@@ -8148,6 +8148,38 @@ class ClawChatHermesBridge:
             logger.warning("failed to enumerate native Hermes profiles", exc_info=True)
         return self._native_profiles
 
+    def _registration_agent_ids(
+        self,
+        synchronized_agent_ids: Iterable[str] = (),
+    ) -> list[str]:
+        """Return every locally routable agent, even when replica sync is empty."""
+        native_agent_ids = self._refresh_native_profiles().keys()
+        return list(
+            dict.fromkeys(
+                [
+                    *self.config.external_agent_ids,
+                    *native_agent_ids,
+                    *synchronized_agent_ids,
+                ]
+            )
+        )
+
+    async def _synchronize_and_register_agents(self) -> list[str]:
+        synchronized_agent_ids: list[str] = []
+        try:
+            synchronized_agent_ids = await self._exchange_agent_replicas()
+        except Exception as exc:
+            logger.warning(
+                "Hermes agent replica sync failed during registration code=%s; "
+                "continuing with local agent inventory",
+                _safe_agent_sync_error_code(exc),
+            )
+        registered_agent_ids = self._registration_agent_ids(synchronized_agent_ids)
+        self._registered_agent_ids = registered_agent_ids
+        for external_id in registered_agent_ids:
+            await self.register_hermes_agent(external_id)
+        return registered_agent_ids
+
     def _agent_workspace_root(self, external_agent_id: str) -> Path:
         native = self._native_profiles.get(external_agent_id)
         if native:
@@ -8630,13 +8662,8 @@ class ClawChatHermesBridge:
                 ",".join(BRIDGE_CAPABILITIES),
                 MARKETPLACE_LOCAL_APP_AGENT_API_REQUEST_CAPABILITY in BRIDGE_CAPABILITIES,
             )
-            synchronized_agent_ids = await self._exchange_agent_replicas()
-            self._registered_agent_ids = list(
-                dict.fromkeys(synchronized_agent_ids)
-            )
-            for external_id in synchronized_agent_ids:
-                await self.register_hermes_agent(external_id)
-            logger.info("registered Hermes agent(s): %s", ", ".join(synchronized_agent_ids))
+            registered_agent_ids = await self._synchronize_and_register_agents()
+            logger.info("registered Hermes agent(s): %s", ", ".join(registered_agent_ids))
             self._start_terminal_retry_task()
             self._start_agent_sync_task()
             await self._flush_terminal_outbox(reason="reconnect")
@@ -9289,12 +9316,7 @@ class ClawChatHermesBridge:
                 except asyncio.TimeoutError:
                     pass
                 self._agent_sync_wakeup.clear()
-                synchronized_agent_ids = await self._exchange_agent_replicas()
-                self._registered_agent_ids = list(
-                    dict.fromkeys(synchronized_agent_ids)
-                )
-                for external_id in synchronized_agent_ids:
-                    await self.register_hermes_agent(external_id)
+                await self._synchronize_and_register_agents()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

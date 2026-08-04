@@ -1,7 +1,7 @@
 {
   "id": "hermes-agent-bridge",
   "name": "Hermes Agent Bridge",
-  "version": "0.3.0-rc.5",
+  "version": "0.3.0-rc.6",
   "runtime": "python",
   "license": "MIT",
   "pythonDependencies": { "aiohttp": ">=3.10,<4" },

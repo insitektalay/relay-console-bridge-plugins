@@ -143,6 +143,51 @@ def test_authentication_failure_never_downgrades_connector_protocol(bridge_envir
     assert bridge._agent_sync_protocol == RELAY_CONNECTOR_V3
 
 
+def test_empty_replica_exchange_keeps_configured_agents_registered(bridge_environment):
+    config, _config_dir = bridge_environment
+    config.external_agent_ids = ["main", "second"]
+    bridge = ClawChatHermesBridge(config)
+    registered = []
+
+    async def empty_exchange():
+        return []
+
+    async def capture_registration(external_agent_id):
+        registered.append(external_agent_id)
+
+    bridge._exchange_agent_replicas = empty_exchange
+    bridge.register_hermes_agent = capture_registration
+
+    result = asyncio.run(bridge._synchronize_and_register_agents())
+
+    assert result == ["main", "second"]
+    assert bridge._registered_agent_ids == ["main", "second"]
+    assert registered == ["main", "second"]
+
+
+def test_replica_sync_failure_does_not_prevent_local_agent_registration(
+    bridge_environment,
+):
+    config, _config_dir = bridge_environment
+    bridge = ClawChatHermesBridge(config)
+    registered = []
+
+    async def failed_exchange():
+        raise RuntimeError("HERMES_AGENT_SYNC_HTTP_401")
+
+    async def capture_registration(external_agent_id):
+        registered.append(external_agent_id)
+
+    bridge._exchange_agent_replicas = failed_exchange
+    bridge.register_hermes_agent = capture_registration
+
+    result = asyncio.run(bridge._synchronize_and_register_agents())
+
+    assert result == ["main"]
+    assert bridge._registered_agent_ids == ["main"]
+    assert registered == ["main"]
+
+
 def test_connector_v3_reads_no_documents_until_profile_is_connected(bridge_environment):
     config, _config_dir = bridge_environment
     exchange = 0

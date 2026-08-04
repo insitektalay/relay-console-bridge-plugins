@@ -125,7 +125,7 @@ import urllib.request
 
 api_url, runtime_version, host_type = sys.argv[1:]
 payload = {
-    "pluginVersion": "0.3.0-rc.5",
+    "pluginVersion": "0.3.0-rc.6",
     "openCoreVersion": runtime_version or None,
     "runtimeType": "hermes",
     "hostType": host_type,

@@ -34,7 +34,7 @@ def test_bridge_metadata_declares_runtime_host_and_protocol_contracts():
 
     assert metadata["runtimeType"] == "hermes"
     assert metadata["hostType"] in {"macos-launchd", "linux-systemd"}
-    assert metadata["pluginVersion"] == "0.3.0-rc.5"
+    assert metadata["pluginVersion"] == "0.3.0-rc.6"
     assert metadata["apiContractVersion"] == "v2"
     assert metadata["websocketContractVersion"] == "bridge.v1"
     assert "clawchat.runtime.hermes" in metadata["capabilities"]
