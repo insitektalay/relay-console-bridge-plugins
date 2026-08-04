@@ -3,6 +3,38 @@
  "name": "Relay Console",
  "description": "Relay Console workspace bridge channel plugin",
  "channels": ["clawchat"],
+ "channelConfigs": {
+  "clawchat": {
+   "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+     "enabled": { "type": "boolean" },
+     "apiUrl": { "type": "string", "format": "uri" },
+     "devicePublicId": { "type": "string" },
+     "deviceToken": { "type": "string" },
+     "workspaceId": { "type": "string" },
+     "openclawAgentId": { "type": "string" },
+     "accounts": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "object",
+       "properties": {
+        "enabled": { "type": "boolean" },
+        "apiUrl": { "type": "string", "format": "uri" },
+        "devicePublicId": { "type": "string" },
+        "deviceToken": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "openclawAgentId": { "type": "string" }
+       },
+       "additionalProperties": false
+      }
+     }
+    },
+    "additionalProperties": false
+   }
+  }
+ },
  "configSchema": {
  "type": "object",
  "additionalProperties": false,

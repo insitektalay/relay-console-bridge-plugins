@@ -106,8 +106,8 @@ grep -q 'bootstrap' "$HOME/launchctl-invocations"
 test "$(paste -sd, "$HOME/hermes-order")" = "preflight,enroll"
 printf 'Guided Hermes installer smoke test passed.\n'
 
-OPENCLAW_HOME="$TEST_ROOT/openclaw home"
-mkdir -p "$OPENCLAW_HOME"
+OPENCLAW_STATE_DIR="$TEST_ROOT/openclaw home"
+mkdir -p "$OPENCLAW_STATE_DIR"
 cat >"$FAKE_BIN/node" <<'NODE'
 #!/usr/bin/env bash
 cat >/dev/null
@@ -116,11 +116,17 @@ exit 0
 NODE
 cat >"$FAKE_BIN/npm" <<'NPM'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "run" && "${2:-}" == "build" ]]; then
+  mkdir -p dist
+  touch dist/index.js
+fi
 exit 0
 NPM
 cat >"$FAKE_BIN/openclaw" <<'OPENCLAW'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ -n "${OPENCLAW_STATE_DIR:-}" ]]
+[[ -z "${OPENCLAW_HOME:-}" ]]
 if [[ " $* " == *" relay-console enroll "* ]]; then
   IFS= read -r code
   [[ "$code" == "OPENCLAW-PAIRING-CODE" ]]
@@ -135,10 +141,11 @@ printf 'OPENCLAW-PAIRING-CODE\n' | env HOME="$HOME" PATH="$FAKE_BIN:/usr/bin:/bi
   "$ROOT/install.sh" \
     --runtime openclaw \
     --api-url https://api.relayconsole.work \
-    --runtime-path "$OPENCLAW_HOME" \
+    --runtime-path "$OPENCLAW_STATE_DIR" \
     --label "Test Mac · OpenClaw bridge"
 
-test -f "$OPENCLAW_HOME/extensions/clawchat/openclaw.plugin.json"
+test -f "$OPENCLAW_STATE_DIR/extensions/clawchat/openclaw.plugin.json"
+test -f "$OPENCLAW_STATE_DIR/extensions/clawchat/dist/index.js"
 grep -q 'relay-console enroll' "$HOME/openclaw-invocations"
 grep -q 'gateway restart' "$HOME/openclaw-invocations"
 test "$(head -n 1 "$HOME/openclaw-order")" = "preflight"

@@ -174,7 +174,7 @@ const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/v1/bridge/compati
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    pluginVersion: "2026.7.31-rc.1",
+    pluginVersion: "2026.7.31-rc.2",
     openCoreVersion: runtimeVersion || undefined,
     runtimeType: "openclaw",
     hostType,
@@ -248,7 +248,7 @@ install_hermes() {
 }
 
 install_openclaw() {
-  local openclaw_home="${RUNTIME_PATH:-${OPENCLAW_HOME:-$HOME/.openclaw}}"
+  local openclaw_home="${RUNTIME_PATH:-${OPENCLAW_STATE_DIR:-${OPENCLAW_HOME:-$HOME}/.openclaw}}"
   [[ -d "$openclaw_home" ]] || fail "OpenClaw home does not exist: $openclaw_home"
   command -v openclaw >/dev/null || fail "OpenClaw is not available on PATH"
 
@@ -257,12 +257,12 @@ install_openclaw() {
   preflight_openclaw "$runtime_version"
   read_enrollment_code
 
-  OPENCLAW_HOME="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" install
-  printf '%s\n' "$ENROLLMENT_CODE" | OPENCLAW_HOME="$openclaw_home" \
+  OPENCLAW_STATE_DIR="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" install
+  printf '%s\n' "$ENROLLMENT_CODE" | OPENCLAW_STATE_DIR="$openclaw_home" \
     openclaw relay-console enroll --api-url "$API_URL" --label "$DEVICE_LABEL"
   unset ENROLLMENT_CODE
-  OPENCLAW_HOME="$openclaw_home" openclaw gateway restart
-  OPENCLAW_HOME="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" health
+  OPENCLAW_STATE_DIR="$openclaw_home" openclaw gateway restart
+  OPENCLAW_STATE_DIR="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" health
 }
 
 case "$RUNTIME" in

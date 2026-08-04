@@ -113,6 +113,11 @@ cat > "$FAKE_BIN/npm" <<'SH'
 if [[ -f "$TEST_STATE/fail-npm" ]]; then
   exit 43
 fi
+if [[ "${1:-}" == "run" && "${2:-}" == "build" ]]; then
+  mkdir -p dist
+  touch dist/index.js
+  exit 0
+fi
 mkdir -p node_modules
 touch node_modules/installed-by-lifecycle-contract
 SH
@@ -124,6 +129,8 @@ SH
 
 cat > "$FAKE_BIN/openclaw" <<'SH'
 #!/usr/bin/env bash
+[[ -n "${OPENCLAW_STATE_DIR:-}" ]]
+[[ -z "${OPENCLAW_HOME:-}" ]]
 printf 'openclaw %s\n' "$*" >> "$TEST_STATE/openclaw.log"
 exit 0
 SH
@@ -253,8 +260,9 @@ run_openclaw_contract() {
   mkdir -p "$openclaw_home"
   printf '{}\n' > "$openclaw_home/openclaw.json"
 
-  HOME="$home" OPENCLAW_HOME="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" install
+  HOME="$home" OPENCLAW_STATE_DIR="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" install
   assert_file "$target/openclaw.plugin.json"
+  assert_file "$target/dist/index.js"
   assert_file "$target/node_modules/installed-by-lifecycle-contract"
   assert_absent "$target/node_modules/.package-lock.json"
   if find "$target/src" -name '*.test.ts' -print -quit | grep -q .; then
@@ -264,22 +272,22 @@ run_openclaw_contract() {
   touch "$target/previous-version-marker"
   mkdir -p "$target.rollback"
   touch "$target.rollback/legacy-rollback-marker"
-  HOME="$home" OPENCLAW_HOME="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" update
+  HOME="$home" OPENCLAW_STATE_DIR="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" update
   assert_absent "$target/previous-version-marker"
   assert_file "$rollback/previous-version-marker"
   assert_absent "$target.rollback"
-  HOME="$home" OPENCLAW_HOME="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" rollback
+  HOME="$home" OPENCLAW_STATE_DIR="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" rollback
   assert_file "$target/previous-version-marker"
 
   touch "$STATE/fail-npm"
-  if HOME="$home" OPENCLAW_HOME="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" update; then
+  if HOME="$home" OPENCLAW_STATE_DIR="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" update; then
     fail "OpenClaw update unexpectedly succeeded when dependency installation failed"
   fi
   assert_file "$target/previous-version-marker"
   rm -f "$STATE/fail-npm"
 
-  HOME="$home" OPENCLAW_HOME="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" health
-  HOME="$home" OPENCLAW_HOME="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" uninstall
+  HOME="$home" OPENCLAW_STATE_DIR="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" health
+  HOME="$home" OPENCLAW_STATE_DIR="$openclaw_home" "$ROOT/scripts/manage-openclaw-bridge.sh" uninstall
   assert_absent "$target"
   assert_absent "$rollback"
   assert_absent "$target.rollback"

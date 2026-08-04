@@ -4,7 +4,7 @@ set -euo pipefail
 COMMAND="${1:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$ROOT/plugins/openclaw-bridge/openclaw-extension"
-OPENCLAW_ROOT="${OPENCLAW_HOME:-$HOME/.openclaw}"
+OPENCLAW_ROOT="${OPENCLAW_STATE_DIR:-${OPENCLAW_HOME:-$HOME}/.openclaw}"
 TARGET="$OPENCLAW_ROOT/extensions/clawchat"
 STATE_ROOT="${OPENCLAW_BRIDGE_STATE_ROOT:-$OPENCLAW_ROOT/.relay-console-bridge/clawchat}"
 ROLLBACK="$STATE_ROOT/rollback"
@@ -49,7 +49,9 @@ stage_files() {
 
   (
     cd "$STAGING"
-    npm ci --omit=dev --ignore-scripts
+    npm ci --ignore-scripts
+    npm run build
+    npm prune --omit=dev --ignore-scripts
     node -e 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")); JSON.parse(require("node:fs").readFileSync("openclaw.plugin.json", "utf8"));'
   )
   chmod -R go-rwx "$STAGING"
@@ -75,6 +77,8 @@ install_or_update() {
   prepare_state_root
   stage_files
   activate_candidate
+  OPENCLAW_STATE_DIR="$OPENCLAW_ROOT" openclaw plugins install "$TARGET" --force
+  OPENCLAW_STATE_DIR="$OPENCLAW_ROOT" openclaw plugins enable clawchat
 }
 
 rollback_active() {
@@ -109,15 +113,15 @@ case "$COMMAND" in
     ;;
   status)
     test -f "$TARGET/openclaw.plugin.json" || { echo "Relay Console bridge is not installed" >&2; exit 1; }
-    openclaw gateway status
+    OPENCLAW_STATE_DIR="$OPENCLAW_ROOT" openclaw gateway status
     ;;
   logs)
-    openclaw logs --follow
+    OPENCLAW_STATE_DIR="$OPENCLAW_ROOT" openclaw logs --follow
     ;;
   health)
     test -f "$TARGET/openclaw.plugin.json"
-    openclaw --version
-    openclaw gateway status
+    OPENCLAW_STATE_DIR="$OPENCLAW_ROOT" openclaw --version
+    OPENCLAW_STATE_DIR="$OPENCLAW_ROOT" openclaw gateway status
     echo "Relay Console bridge files are present at $TARGET"
     ;;
   uninstall)

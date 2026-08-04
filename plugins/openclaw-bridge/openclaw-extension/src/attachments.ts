@@ -57,8 +57,9 @@ const uploads = new Map<string, UploadSession>();
 let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
 export function resolveClawChatMediaRoot(): string {
- const openclawHome = process.env.OPENCLAW_HOME?.trim() || path.join(homedir(), ".openclaw");
- return path.join(openclawHome, "media", "clawchat");
+ const openclawHome = process.env.OPENCLAW_HOME?.trim() || homedir();
+ const stateRoot = process.env.OPENCLAW_STATE_DIR?.trim() || path.join(openclawHome, ".openclaw");
+ return path.join(stateRoot, "media", "clawchat");
 }
 
 function normalizeIdSegment(value: unknown, label: string): string {
