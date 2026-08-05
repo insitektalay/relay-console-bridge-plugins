@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 
 import {
  authenticateBridgeDevice,
@@ -9,6 +10,24 @@ import {
  requireSecureRelayApiUrl,
  rotateBridgeDeviceCredential,
 } from "./bridge-auth.js";
+
+function configureTestCredentialPersistence(
+ loadConfig: () => OpenClawConfig,
+ saveOverride?: () => Promise<void>,
+) {
+ const credentials = new Map<string, string>();
+ const restore = configureBridgeCredentialPersistence({
+  loadConfig,
+  loadCredential: async ({ apiUrl, devicePublicId }) =>
+   credentials.get(`${apiUrl}\n${devicePublicId}`) ?? null,
+  saveCredential: async ({ apiUrl, devicePublicId, replacementCredential }) => {
+   if (saveOverride) await saveOverride();
+   credentials.set(`${apiUrl}\n${devicePublicId}`, replacementCredential);
+  },
+  withCredentialLock: async (_apiUrl, _devicePublicId, operation) => operation(),
+ });
+ return { credentials, restore };
+}
 
 test("Relay API URLs require HTTPS and reject embedded credentials", () => {
  assert.equal(requireSecureRelayApiUrl("https://relay.example.com/"), "https://relay.example.com");
@@ -40,7 +59,7 @@ test("device auth payload includes capabilities and preserves the supplied crede
 });
 
 test("API v2 authentication durably saves the replacement before returning tokens", async (t) => {
- let savedConfig = {
+ const savedConfig = {
   channels: {
    clawchat: {
     apiUrl: "https://relay.example.com",
@@ -59,10 +78,8 @@ test("API v2 authentication durably saves the replacement before returning token
    credentials: { devicePublicId: "bdev_public", deviceToken: "replacement-secret" },
   }), { status: 200, headers: { "Content-Type": "application/json" } });
  });
- const restore = configureBridgeCredentialPersistence({
-  loadConfig: () => savedConfig,
-  writeConfigFile: async (config) => { savedConfig = config as typeof savedConfig; },
- });
+ const persistence = configureTestCredentialPersistence(() => savedConfig);
+ const { restore } = persistence;
  t.after(restore);
 
  const response = await authenticateBridgeDevice({
@@ -72,12 +89,16 @@ test("API v2 authentication durably saves the replacement before returning token
  });
 
  assert.equal(requestCredential, "current-secret");
- assert.equal(savedConfig.channels.clawchat.deviceToken, "replacement-secret");
+ assert.equal(savedConfig.channels.clawchat.deviceToken, "current-secret");
+ assert.equal(
+  persistence.credentials.get("https://relay.example.com\nbdev_public"),
+  "replacement-secret",
+ );
  assert.equal(response.tokens?.accessToken, "access");
 });
 
 test("concurrent API v2 authentication preserves the rotating credential chain", async (t) => {
- let savedConfig = {
+ const savedConfig = {
   channels: {
    clawchat: {
     apiUrl: "https://relay.example.com",
@@ -97,10 +118,8 @@ test("concurrent API v2 authentication preserves the rotating credential chain",
    credentials: { devicePublicId: "bdev_public", deviceToken: `replacement-${sequence}` },
   }), { status: 200, headers: { "Content-Type": "application/json" } });
  });
- const restore = configureBridgeCredentialPersistence({
-  loadConfig: () => savedConfig,
-  writeConfigFile: async (config) => { savedConfig = config as typeof savedConfig; },
- });
+ const persistence = configureTestCredentialPersistence(() => savedConfig);
+ const { restore } = persistence;
  t.after(restore);
 
  await Promise.all([
@@ -117,11 +136,15 @@ test("concurrent API v2 authentication preserves the rotating credential chain",
  ]);
 
  assert.deepEqual(requestCredentials, ["initial-secret", "replacement-1"]);
- assert.equal(savedConfig.channels.clawchat.deviceToken, "replacement-2");
+ assert.equal(savedConfig.channels.clawchat.deviceToken, "initial-secret");
+ assert.equal(
+  persistence.credentials.get("https://relay.example.com\nbdev_public"),
+  "replacement-2",
+ );
 });
 
 test("concurrent accounts cannot overwrite each other's replacement credential", async (t) => {
- let savedConfig = {
+ const savedConfig = {
   channels: {
    clawchat: {
     apiUrl: "https://relay.example.com",
@@ -150,10 +173,8 @@ test("concurrent accounts cannot overwrite each other's replacement credential",
    },
   }), { status: 200, headers: { "Content-Type": "application/json" } });
  });
- const restore = configureBridgeCredentialPersistence({
-  loadConfig: () => savedConfig,
-  writeConfigFile: async (config) => { savedConfig = config as typeof savedConfig; },
- });
+ const persistence = configureTestCredentialPersistence(() => savedConfig);
+ const { restore } = persistence;
  t.after(restore);
 
  await Promise.all([
@@ -169,9 +190,14 @@ test("concurrent accounts cannot overwrite each other's replacement credential",
   }),
  ]);
 
- assert.equal(savedConfig.channels.clawchat.deviceToken, "replacement-device-a");
+ assert.equal(savedConfig.channels.clawchat.deviceToken, "secret-a");
+ assert.equal(savedConfig.channels.clawchat.accounts.team.deviceToken, "secret-b");
  assert.equal(
-  savedConfig.channels.clawchat.accounts.team.deviceToken,
+  persistence.credentials.get("https://relay.example.com\ndevice-a"),
+  "replacement-device-a",
+ );
+ assert.equal(
+  persistence.credentials.get("https://relay.example.com\ndevice-b"),
   "replacement-device-b",
  );
 });
@@ -191,10 +217,10 @@ test("API v2 authentication withholds bearer tokens when persistence fails", asy
   tokens: { accessToken: "must-not-be-used" },
   credentials: { devicePublicId: "bdev_public", deviceToken: "replacement-secret" },
  }), { status: 200, headers: { "Content-Type": "application/json" } }));
- const restore = configureBridgeCredentialPersistence({
-  loadConfig: () => savedConfig,
-  writeConfigFile: async () => { throw new Error("disk full"); },
- });
+ const { restore } = configureTestCredentialPersistence(
+  () => savedConfig,
+  async () => { throw new Error("disk full"); },
+ );
  t.after(restore);
 
  await assert.rejects(

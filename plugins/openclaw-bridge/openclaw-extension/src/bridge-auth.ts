@@ -48,7 +48,22 @@ export type BridgeAuthResponse = {
 
 type BridgeCredentialPersistence = {
  loadConfig: () => OpenClawConfig;
- writeConfigFile: (config: OpenClawConfig) => Promise<void>;
+ loadCredential: (input: {
+  apiUrl: string;
+  devicePublicId: string;
+  configuredCredential: string;
+ }) => Promise<string | null>;
+ saveCredential: (input: {
+  apiUrl: string;
+  devicePublicId: string;
+  configuredCredential: string;
+  replacementCredential: string;
+ }) => Promise<void>;
+ withCredentialLock: <T>(
+  apiUrl: string,
+  devicePublicId: string,
+  operation: () => Promise<T>,
+ ) => Promise<T>;
 };
 
 let credentialPersistence: BridgeCredentialPersistence | null = null;
@@ -223,38 +238,6 @@ async function requestBridgeDeviceAuthentication(input: {
  return (await resp.json()) as BridgeAuthResponse;
 }
 
-function withRotatingCredential(
- cfg: OpenClawConfig,
- accountId: string,
- replacement: string,
-): OpenClawConfig {
- const channels = (cfg.channels ?? {}) as Record<string, unknown>;
- const section = (channels.clawchat ?? {}) as Record<string, unknown>;
- if (accountId === "default") {
-  return {
-   ...cfg,
-   channels: { ...channels, clawchat: { ...section, deviceToken: replacement } },
-  } as OpenClawConfig;
- }
- const accounts = (section.accounts ?? {}) as Record<string, Record<string, unknown>>;
- if (!accounts[accountId]) {
-  throw new Error(`Relay Console account ${accountId} disappeared during credential rotation`);
- }
- return {
-  ...cfg,
-  channels: {
-   ...channels,
-   clawchat: {
-    ...section,
-    accounts: {
-     ...accounts,
-     [accountId]: { ...accounts[accountId], deviceToken: replacement },
-    },
-   },
-  },
- } as OpenClawConfig;
-}
-
 function resolveCredentialAccount(
  cfg: OpenClawConfig,
  apiUrl: string,
@@ -293,7 +276,13 @@ async function authenticateAndPersistReplacement(input: {
  const cfg = persistence.loadConfig();
  const account = resolveCredentialAccount(cfg, input.apiUrl, input.devicePublicId);
  const credentialKey = `${input.apiUrl}\n${input.devicePublicId}`;
- const currentCredential = volatileCredentials.get(credentialKey) ?? account.deviceToken!;
+ const currentCredential = volatileCredentials.get(credentialKey)
+  ?? await persistence.loadCredential({
+   apiUrl: input.apiUrl,
+   devicePublicId: input.devicePublicId,
+   configuredCredential: account.deviceToken!,
+  })
+  ?? account.deviceToken!;
  const response = await requestBridgeDeviceAuthentication({
   ...input,
   deviceToken: currentCredential,
@@ -305,13 +294,18 @@ async function authenticateAndPersistReplacement(input: {
    "Relay Console API v2 authentication response did not include matching replacement credentials",
   );
  }
- // Keep the consumed credential chain alive in this process even if the
- // durable write fails. Returned bearer tokens are withheld until the
- // OpenClaw owner-only config writer has committed the replacement.
+ // Keep rotation state outside OpenClaw's watched configuration. Rewriting
+ // channels.clawchat here reloads the channel while authentication is still
+ // completing, which can start a second process with the consumed credential
+ // and cause Railway to revoke the bridge as a replay.
  volatileCredentials.set(credentialKey, replacementCredential);
- const nextConfig = withRotatingCredential(cfg, account.accountId, replacementCredential);
  try {
-  await persistence.writeConfigFile(nextConfig);
+  await persistence.saveCredential({
+   apiUrl: input.apiUrl,
+   devicePublicId: input.devicePublicId,
+   configuredCredential: account.deviceToken!,
+   replacementCredential,
+  });
  } catch (error) {
   throw new Error(
    "Relay Console API v2 authentication rotated the device credential but durable persistence failed; retry without restarting or re-enroll the device",
@@ -328,11 +322,17 @@ export function authenticateBridgeDevice(input: {
  extraCapabilities?: string[];
 }): Promise<BridgeAuthResponse> {
  const apiUrl = requireSecureRelayApiUrl(input.apiUrl);
- // OpenClaw writes its complete configuration file. Serialize authentication
- // globally so two accounts cannot each rotate successfully and then overwrite
- // the other account's freshly persisted credential with a stale config copy.
+ const persistence = credentialPersistence;
+ if (!persistence) {
+  return Promise.reject(new Error("Relay Console API v2 credential persistence is not configured"));
+ }
+ // Serialize in-process and across overlapping OpenClaw gateway lifecycles.
  const current = authenticationTail.catch(() => undefined)
-  .then(() => authenticateAndPersistReplacement({ ...input, apiUrl }));
+  .then(() => persistence.withCredentialLock(
+   apiUrl,
+   input.devicePublicId,
+   () => authenticateAndPersistReplacement({ ...input, apiUrl }),
+  ));
  authenticationTail = current;
  return current;
 }
