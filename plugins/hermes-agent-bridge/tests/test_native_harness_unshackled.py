@@ -440,3 +440,13 @@ def test_bridge_snapshot_is_authoritative_over_recent_messages(monkeypatch, tmp_
 
     assert source == "bridge_snapshot"
     assert history == snapshot
+
+
+def test_current_native_process_name_satisfies_harness_guard(monkeypatch, tmp_path):
+    manager = _run_manager(monkeypatch, tmp_path)
+    from clawchat_bridge.main import NATIVE_HARNESS_REQUIRED_TOOLS
+    names = (NATIVE_HARNESS_REQUIRED_TOOLS - {"process"}) | {"process_manage"}
+    manager._validate_native_harness_visible(
+        ActiveRun(dispatch_id="native-name-check", runtime_session_id="native-session", external_agent_id="default"),
+        {}, names, disabled_toolsets=[], replace_base_harness=False, skip_memory=False,
+    )

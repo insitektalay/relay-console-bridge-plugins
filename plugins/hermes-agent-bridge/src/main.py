@@ -5965,6 +5965,20 @@ class HermesRunManager:
             thread_id=str(payload.get("threadId") or "") or None,
             gateway_session_key=str(payload.get("runtimeSessionId") or "") or None,
         )
+        # Current Hermes can omit session/process tools from its initial schema
+        # assembly. Restore the native registered definitions, not substitutes.
+        if not replace_base_harness:
+            from tools.registry import registry
+            visible = set(self._model_visible_tool_names(agent))
+            disabled_native = self._native_harness_missing_allowed_by_disabled_toolsets(disabled_toolsets)
+            restore = []
+            if "session_search" not in visible and "session_search" not in disabled_native:
+                restore.append("session_search")
+            if not visible.intersection({"process", "process_manage"}) and "process" not in disabled_native:
+                restore.append("process_manage" if registry.get_entry("process_manage") else "process")
+            if restore:
+                agent.tools = [*(agent.tools or []), *registry.get_definitions(restore)]
+                agent.valid_tool_names = set(self._model_visible_tool_names(agent))
         final_model_visible_tool_names = self._model_visible_tool_names(agent)
         try:
             from tools.registry import registry
@@ -6170,6 +6184,9 @@ class HermesRunManager:
         if skip_memory:
             required.discard("memory")
 
+        # Hermes renamed the native process tool; both names provide the same role.
+        if "process_manage" in final_tool_names:
+            required.discard("process")
         missing = sorted(required.difference(final_tool_names))
         if not missing:
             return
