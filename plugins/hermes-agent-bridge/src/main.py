@@ -9044,8 +9044,8 @@ class ClawChatHermesBridge:
         if pending.acknowledged:
             return
         # A newly authenticated connection may follow a server repair. Retry
-            # the same saved receipt once, without running the agent again.
-            if pending.attempts >= TERMINAL_EVENT_MAX_ATTEMPTS and reason != "reconnect":
+        # the same saved receipt once, without running the agent again.
+        if pending.attempts >= TERMINAL_EVENT_MAX_ATTEMPTS and reason != "reconnect":
             logger.error(
                 "terminal event delivery exhausted waiting for terminal ack eventId=%s type=%s dispatchId=%s attempts=%s lastError=%s timestamp=%s",
                 pending.event_id,
