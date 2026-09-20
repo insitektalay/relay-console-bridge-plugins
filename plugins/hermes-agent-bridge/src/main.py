@@ -10078,6 +10078,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+@contextmanager
+def _bridge_process_lock(config_path: Path):
+    # A second owner can replay a rotated credential and revoke this device.
+    import fcntl
+
+    lock_path = Path(config_path).resolve().with_suffix(".process.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a") as handle:
+        os.chmod(lock_path, 0o600)
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("Another Hermes bridge process owns this configuration") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 async def async_main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -10128,30 +10147,35 @@ async def async_main(argv: list[str] | None = None) -> int:
 
     if args.command == "run":
         try:
-            config = BridgeConfig.load(args.config)
-        except Exception as exc:
-            print(f"Relay Console Hermes bridge is not configured: {exc}", file=sys.stderr)
+            with _bridge_process_lock(args.config or _config_path()):
+                try:
+                    config = BridgeConfig.load(args.config)
+                except Exception as exc:
+                    print(f"Relay Console Hermes bridge is not configured: {exc}", file=sys.stderr)
+                    return 1
+                if args.agents:
+                    config.external_agent_ids = list(dict.fromkeys([*config.external_agent_ids, *args.agents]))
+                bridge = ClawChatHermesBridge(config, args.config or _config_path())
+                loop = asyncio.get_running_loop()
+                for sig in (signal.SIGINT, signal.SIGTERM):
+                    try:
+                        loop.add_signal_handler(sig, bridge.stop)
+                    except NotImplementedError:
+                        pass
+                logger.info(
+                    "starting ClawChat Hermes bridge at %s pid=%s codePath=%s cwd=%s pluginVersion=%s openCoreVersion=%s",
+                    _now_iso(),
+                    os.getpid(),
+                    Path(__file__).resolve(),
+                    Path.cwd(),
+                    PLUGIN_VERSION,
+                    OPEN_CORE_VERSION,
+                )
+                await bridge.run_forever()
+                return 0
+        except RuntimeError as exc:
+            print(f"Relay Console Hermes bridge could not start: {exc}", file=sys.stderr)
             return 1
-        if args.agents:
-            config.external_agent_ids = list(dict.fromkeys([*config.external_agent_ids, *args.agents]))
-        bridge = ClawChatHermesBridge(config, args.config or _config_path())
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
-                loop.add_signal_handler(sig, bridge.stop)
-            except NotImplementedError:
-                pass
-        logger.info(
-            "starting ClawChat Hermes bridge at %s pid=%s codePath=%s cwd=%s pluginVersion=%s openCoreVersion=%s",
-            _now_iso(),
-            os.getpid(),
-            Path(__file__).resolve(),
-            Path.cwd(),
-            PLUGIN_VERSION,
-            OPEN_CORE_VERSION,
-        )
-        await bridge.run_forever()
-        return 0
 
     parser.error("unknown command")
     return 2

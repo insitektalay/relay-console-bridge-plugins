@@ -170,3 +170,15 @@ def test_rotation_atomically_replaces_saved_credential_without_printing_it(monke
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["deviceToken"] == "replacement-secret"
     assert "replacement-secret" not in capsys.readouterr().out
+
+
+def test_bridge_process_lock_rejects_duplicate_owner_and_releases(tmp_path):
+    import pytest
+
+    config = tmp_path / "config.json"
+    with main._bridge_process_lock(config):
+        with pytest.raises(RuntimeError, match="Another Hermes bridge process"):
+            with main._bridge_process_lock(config):
+                raise AssertionError("Duplicate owner was accepted")
+    with main._bridge_process_lock(config):
+        pass
