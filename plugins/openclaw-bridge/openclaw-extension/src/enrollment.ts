@@ -1,3 +1,4 @@
+import { readBridgeRuntimeConfig, writeBridgeRuntimeConfig } from "./runtime-config.js";
 import type { OpenClawConfig, OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { hostname } from "node:os";
 
@@ -182,13 +183,13 @@ export function registerRelayConsoleCli(api: OpenClawPluginApi): void {
       code,
       deviceLabel: options.label,
      });
-     const nextConfig = applyBridgeEnrollmentToConfig(api.runtime.config.loadConfig(), {
+     const nextConfig = applyBridgeEnrollmentToConfig(readBridgeRuntimeConfig(api.runtime.config), {
       apiUrl,
       accountId: options.account,
       openclawAgentId: options.agent,
       response,
      });
-     await api.runtime.config.writeConfigFile(nextConfig);
+     await writeBridgeRuntimeConfig(api.runtime.config, nextConfig);
 
      const workspaceName = response.workspace?.name?.trim() || response.workspace?.id?.trim();
      const deviceLabel = response.device?.label?.trim() || options.label;
@@ -203,7 +204,7 @@ export function registerRelayConsoleCli(api: OpenClawPluginApi): void {
     .description("Rotate the saved Relay Console bridge device credential")
     .option("--account <id>", "Relay Console channel account ID", "default")
     .action(async (options: { account: string }) => {
-     const cfg = api.runtime.config.loadConfig();
+     const cfg = readBridgeRuntimeConfig(api.runtime.config);
      const accountId = options.account.trim() || "default";
      const account = relayAccountConfig(cfg, accountId);
      const apiUrl = requiredEnrollmentString(account.apiUrl, "API URL");
@@ -224,7 +225,7 @@ export function registerRelayConsoleCli(api: OpenClawPluginApi): void {
       accountId,
       response,
      });
-     await api.runtime.config.writeConfigFile(nextConfig);
+     await writeBridgeRuntimeConfig(api.runtime.config, nextConfig);
      process.stdout.write(
       "Relay Console bridge credential rotated and saved. Restart OpenClaw using your existing runtime lifecycle.\n",
      );

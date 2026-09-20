@@ -1,3 +1,4 @@
+import { readBridgeRuntimeConfig, writeBridgeRuntimeConfig } from "./src/runtime-config.js";
 import type { ChannelPlugin, OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk/core";
 import { clawChatPlugin } from "./src/channel.js";
@@ -11,8 +12,8 @@ const plugin = {
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi) {
     configureBridgeCredentialPersistence({
-      loadConfig: () => api.runtime.config.loadConfig(),
-      writeConfigFile: (config) => api.runtime.config.writeConfigFile(config),
+      loadConfig: () => readBridgeRuntimeConfig(api.runtime.config),
+      writeConfigFile: (config) => writeBridgeRuntimeConfig(api.runtime.config, config),
     });
     api.registerChannel({ plugin: clawChatPlugin as ChannelPlugin });
     registerRelayConsoleCli(api);

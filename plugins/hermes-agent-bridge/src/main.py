@@ -8195,7 +8195,7 @@ class ClawChatHermesBridge:
             auth = await self._authenticate_device(session)
             tokens = auth.get("tokens") or {}
             access_token = tokens.get("accessToken") or auth.get("accessToken")
-            ws_token = access_token or tokens.get("wsToken") or auth.get("wsToken") or auth.get("token")
+            ws_token = tokens.get("wsToken") or auth.get("wsToken") or auth.get("token")
             self.access_token = access_token or tokens.get("wsToken") or auth.get("wsToken") or auth.get("token")
             if not ws_token:
                 raise RuntimeError("ClawChat bridge auth response did not include wsToken")

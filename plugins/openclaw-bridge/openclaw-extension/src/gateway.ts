@@ -1,3 +1,4 @@
+import { nativeAgentEntries } from "./native-agents.js";
 import type { ChannelGatewayContext } from "openclaw/plugin-sdk";
 import { isDiagnosticsEnabled, onInternalDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { readFile } from "node:fs/promises";
@@ -137,16 +138,12 @@ async function getBridgeTokens(account: ClawChatResolvedAccount): Promise<{ wsTo
 
 /** Get all agent IDs from the OpenClaw config. */
 function getOwnedAgentIds(cfg: Record<string, unknown>): string[] {
- const agents = (cfg as { agents?: { list?: { id: string }[] } }).agents;
- if (!agents?.list) return [];
- return agents.list.map((a) => a.id);
+ return nativeAgentEntries(cfg).map((a) => a.id);
 }
 
 /** Get display name for an agent from config. */
 function getAgentDisplayName(cfg: Record<string, unknown>, agentId: string): string {
- const agents = (cfg as { agents?: { list?: { id: string; name?: string }[] } }).agents;
- if (!agents?.list) return agentId;
- const agent = agents.list.find((a) => a.id === agentId);
+ const agent = nativeAgentEntries(cfg).find((a) => a.id === agentId);
  return agent?.name || agentId;
 }
 

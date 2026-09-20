@@ -1,3 +1,4 @@
+import { nativeAgentEntries } from "./native-agents.js";
 /**
  * Agent workspace handler — mirrors library.ts in approach.
  *
@@ -91,8 +92,8 @@ export function resolveWorkspaceRoot(cfg: OpenClawConfig, agentSlug: string): st
  const agents = (cfg as { agents?: { list?: Array<{ id: string; workspace?: string }>; defaults?: { workspace?: string } } }).agents;
 
  // 1. Explicit workspace in agents.list
- if (agents?.list && Array.isArray(agents.list)) {
-  const entry = agents.list.find((a) => a.id === agentSlug);
+ {
+  const entry = nativeAgentEntries(cfg).find((a) => a.id === agentSlug);
   if (entry?.workspace?.trim()) {
    return entry.workspace.trim().replace(/^~/, home);
   }
@@ -128,7 +129,7 @@ function resolveAgentSlug(cfg: OpenClawConfig, rawAgentId: string, log?: LogSink
 
  const home = homedir();
  const agents = (cfg as { agents?: { list?: Array<{ id: string }> } }).agents;
- const agentList: Array<{ id: string }> = agents?.list ?? [];
+ const agentList = nativeAgentEntries(cfg);
 
  for (const agent of agentList) {
   if (!agent.id) continue;

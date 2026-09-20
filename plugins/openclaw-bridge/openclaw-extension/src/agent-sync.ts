@@ -1,3 +1,4 @@
+import { nativeAgentEntries } from "./native-agents.js";
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -64,7 +65,7 @@ type ExchangeResponse = {
 class ConnectorProtocolUnsupportedError extends Error {}
 
 export function ownedAgentIds(cfg: Record<string, unknown>): string[] {
- const list = (cfg as { agents?: { list?: Array<{ id?: string }> } }).agents?.list ?? [];
+ const list = nativeAgentEntries(cfg);
  return [...new Set(list.map((entry) => entry.id?.trim()).filter((id): id is string => Boolean(id)))];
 }
 
@@ -129,7 +130,7 @@ export async function exchangeAgentReplicas(
  const stateRoot = process.env.OPENCLAW_STATE_DIR?.trim() || join(homedir(), ".openclaw");
  const stateFile = join(stateRoot, "clawchat", `agent-sync-${hash(ctx.account.accountId).slice(0, 16)}.json`);
  const state = await loadState(stateFile);
- const entries = (ctx.cfg as { agents?: { list?: Array<{ id: string; name?: string; model?: string | { primary?: string } }> } }).agents?.list ?? [];
+ const entries = nativeAgentEntries(ctx.cfg);
  const agents = [];
  const liveKeys = new Set<string>();
  const incompleteScanAgentIds = new Set<string>();
@@ -291,7 +292,7 @@ async function applyResponse(
  }
  for (const agent of response.agents) {
   const workspaceRoot = resolveWorkspaceRoot(ctx.cfg, agent.externalId);
-  const entry = (ctx.cfg as { agents?: { list?: Array<{ id: string; name?: string; model?: string | { primary?: string } }> } }).agents?.list?.find((candidate) => candidate.id === agent.externalId);
+  const entry = nativeAgentEntries(ctx.cfg).find((candidate) => candidate.id === agent.externalId);
   state.profiles[agent.externalId] = {
    serverVersion: String(agent.profileServerVersion),
    localHash: hash(JSON.stringify({ externalId: agent.externalId, name: entry?.name?.trim() || agent.externalId, role: "assistant", status: "active", modelPrimary: typeof entry?.model === "string" ? entry.model : entry?.model?.primary })),
