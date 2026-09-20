@@ -204,7 +204,7 @@ MAX_MARKETPLACE_SKILL_FILE_BYTES = 500_000
 TERMINAL_EVENT_TYPES = {"run.completed", "run.failed", "run.cancelled"}
 TERMINAL_EVENT_MAX_ATTEMPTS = 8
 TERMINAL_EVENT_RETRY_INTERVAL_S = 5.0
-BACKFILL_ENDPOINT_PATH = "/api/v1/bridge/runtime-dispatches/backfill"
+BACKFILL_ENDPOINT_PATH = "/api/v1/bridge/runtime-dispatches/pending"
 BACKFILL_REQUEST_TIMEOUT_S = 10.0
 BACKFILL_MAX_ATTEMPTS = 3
 BACKFILL_RETRY_BASE_S = 1.0
@@ -8371,26 +8371,19 @@ class ClawChatHermesBridge:
         token = self.access_token
         if not token:
             raise RuntimeError("missing ClawChat access token for backfill")
-        payload = {
-            "devicePublicId": self.config.device_public_id,
-            "workspaceId": self.config.workspace_id,
-            "externalAgentIds": agent_ids,
-            "states": ["pending", "started_unaccepted", "unaccepted"],
-            "capabilities": BRIDGE_CAPABILITIES,
-        }
         url = f"{self.config.api_url}{BACKFILL_ENDPOINT_PATH}"
         timeout = aiohttp.ClientTimeout(total=BACKFILL_REQUEST_TIMEOUT_S)
         assert self.session is not None
-        async with self.session.post(
+        async with self.session.get(
             url,
-            json=payload,
+            params={"externalAgentIds": ",".join(agent_ids)},
             headers={"Authorization": f"Bearer {token}"},
             timeout=timeout,
         ) as response:
             text = await response.text()
             if response.status == 404:
                 raise RuntimeError(
-                    "blocked by missing ClawChat endpoint: POST "
+                    "blocked by missing ClawChat endpoint: GET "
                     f"{BACKFILL_ENDPOINT_PATH} must return pending/unaccepted Hermes dispatches"
                 )
             if response.status >= 400:

@@ -172,7 +172,7 @@ def test_unknown_cancel_does_not_emit_terminal_retry(monkeypatch):
 
 
 def test_backfill_endpoint_contract_path_is_explicit():
-    assert BACKFILL_ENDPOINT_PATH == "/api/v1/bridge/runtime-dispatches/backfill"
+    assert BACKFILL_ENDPOINT_PATH == "/api/v1/bridge/runtime-dispatches/pending"
 
 
 def test_dispatch_state_store_persists_terminal_dedupe(tmp_path):
