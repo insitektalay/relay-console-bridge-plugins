@@ -18,6 +18,7 @@ export const ROTATING_CREDENTIALS_CAPABILITY = "clawchat.bridge.rotating_credent
 export const MARKETPLACE_LOCAL_REPO_DOCS_READ_CAPABILITY = "marketplaceLocalRepoDocsRead";
 
 const DEFAULT_CAPABILITIES = [
+ "clawchat.runtime.model_catalog",
  "clawchat.runtime.openclaw",
  STRUCTURED_PROMPT_CAPABILITY,
  RUNTIME_STRUCTURED_JOBS_CAPABILITY,
@@ -57,6 +58,10 @@ let credentialPersistence: BridgeCredentialPersistence | null = null;
 let authenticationTail: Promise<unknown> = Promise.resolve();
 const sessions = new Map<string, { response: BridgeAuthResponse; expiresAt: number }>();
 const volatileCredentials = new Map<string, string>();
+
+export function getCurrentBridgeConfig(fallback: OpenClawConfig): OpenClawConfig {
+ return credentialPersistence ? credentialPersistence.loadConfig() : fallback;
+}
 
 export function configureBridgeCredentialPersistence(
  persistence: BridgeCredentialPersistence,
@@ -138,8 +143,15 @@ export function requireSecureRelayApiUrl(value: string): string {
  return url.toString().replace(/\/$/, "");
 }
 
+let nativeFileSupport: string[] | undefined;
 export function getBridgeClientCapabilities(extraCapabilities: string[] = []): string[] {
- return [...new Set([...DEFAULT_CAPABILITIES, ...extraCapabilities].filter(Boolean))];
+ if (!nativeFileSupport) {
+  try {
+   execFileSync("python3", ["-c", "import fcntl, sqlite3"], { timeout: 3000, stdio: "ignore" });
+   nativeFileSupport = ["clawchat.agent_files.v1", "clawchat.native_operation_barrier.v1"];
+  } catch { nativeFileSupport = []; }
+ }
+ return [...new Set([...DEFAULT_CAPABILITIES, ...nativeFileSupport, ...extraCapabilities].filter(Boolean))];
 }
 
 export function getBridgeClientMetadata(extraCapabilities: string[] = []) {

@@ -1,3 +1,8 @@
+import { configuredModelCatalog } from "./model-catalog.js";
+import { resolveWorkspaceRoot } from "./agent-workspace.js";
+import { homedir as fileHome } from "node:os";
+import { join as fileJoin } from "node:path";
+import { handleAgentFile } from "./agent-files.js";
 import { nativeAgentEntries } from "./native-agents.js";
 import type { ChannelGatewayContext } from "openclaw/plugin-sdk";
 import { isDiagnosticsEnabled, onInternalDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
@@ -5,7 +10,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ClawChatResolvedAccount } from "./types.js";
-import { authenticateBridgeDevice, getBridgeClientCapabilities } from "./bridge-auth.js";
+import { authenticateBridgeDevice, getBridgeClientCapabilities, getCurrentBridgeConfig } from "./bridge-auth.js";
 import { executeStructuredPrompt } from "./structured-prompt.js";
 import { provisionAgent } from "./provisioner.js";
 import type { ProvisionRequest } from "./provisioner.js";
@@ -756,6 +761,22 @@ export async function startClawChatGatewayAccount(
  const capabilities = getBridgeClientCapabilities();
  log?.info?.(`[clawchat] bridge auth metadata capabilities=[${capabilities.join(", ")}]`);
  const { wsToken, accessToken } = await getBridgeTokens(account);
+ let catalogPublishedAt = 0;
+ const publishModels = async () => {
+  if (Date.now() - catalogPublishedAt < 300_000) return;
+  catalogPublishedAt = Date.now();
+  try {
+   const catalog = configuredModelCatalog(getCurrentBridgeConfig(cfg));
+   if (!catalog) { catalogPublishedAt = 0; return; }
+   const token = (await getBridgeTokens(account)).accessToken;
+   const response = await fetch(`${account.apiUrl}/api/v1/bridge/runtime-model-catalog`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(catalog), signal: AbortSignal.timeout(10_000) });
+   if (!response.ok) throw new Error("Model catalog publication failed");
+  } catch {
+   catalogPublishedAt = 0;
+   log?.warn?.("[clawchat] runtime model catalog publication failed");
+  }
+ };
+ await publishModels();
 
  // Derive WebSocket URL from apiUrl (https → wss, http → ws)
  const wsUrl = account.apiUrl!.replace(/^https/, "wss").replace(/^http/, "ws");
@@ -996,6 +1017,28 @@ export async function startClawChatGatewayAccount(
     return;
    }
 
+   if (type === "clawchat.agent_file.operation" && msg.data) {
+    const command = msg.data as Record<string, any>;
+    try {
+    const fileConfig = getCurrentBridgeConfig(cfg);
+    if (!getOwnedAgentIds(fileConfig as Record<string, unknown>).includes(command.externalAgentId)) {
+     sendWsMessage(ws, log, { type: "clawchat.agent_file.error", data: { requestId: command.requestId, error: "AGENT_FILE_AGENT_NOT_BOUND" } });
+     return;
+    }
+    handleAgentFile({ root: resolveWorkspaceRoot(fileConfig, command.externalAgentId), stateDir: fileJoin(fileHome(), ".openclaw", "clawchat", "native-files", account.workspaceId!), workspaceId: account.workspaceId!, command, post: async (path, body) => {
+     const token = (await getBridgeTokens(account)).accessToken;
+     const response = await fetch(`${account.apiUrl}/api/v1/${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) });
+     if (!response.ok) throw new Error("Agent file request unavailable");
+     const result = await response.json() as any;
+     return result.data ?? result;
+    } }).then(result => sendWsMessage(ws, log, { type: "clawchat.agent_file.result", data: { ...result, requestId: command.requestId } }))
+     .catch(() => sendWsMessage(ws, log, { type: "clawchat.agent_file.error", data: { requestId: command.requestId, error: "AGENT_FILE_UNAVAILABLE" } }));
+    } catch {
+     sendWsMessage(ws, log, { type: "clawchat.agent_file.error", data: { requestId: command.requestId, error: "AGENT_FILE_UNAVAILABLE" } });
+    }
+    return;
+   }
+
    // Agent workspace CRUD operations (sync — direct filesystem, no RPC)
    if (type === "agent.workspace.list" && msg.data) {
     log?.info?.(`[clawchat] bridge control received agent.workspace.list requestId=${(msg.data as { requestId?: string }).requestId ?? "<missing>"}`);
@@ -1061,6 +1104,7 @@ export async function startClawChatGatewayAccount(
    }
   },
  onSynchronized: (externalAgentIds) => {
+   void publishModels();
    if (ws.readyState !== WebSocket.OPEN) return;
    for (const externalAgentId of externalAgentIds) {
     sendWsMessage(ws, log, { type: "register_bridge_agent", externalAgentId, capabilities });

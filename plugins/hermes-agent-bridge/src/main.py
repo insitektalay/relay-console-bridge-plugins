@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import MethodType
 from typing import Any
+import uuid
 from uuid import uuid4
 
 try:
@@ -85,6 +86,8 @@ RELAY_CONNECTOR_V3 = "relay-connector.v3"
 RELAY_CONNECTOR_V2 = "relay-connector.v2"
 AGENT_REPLICA_V1 = "agent-replica.v1"
 BRIDGE_CAPABILITIES = [
+    "clawchat.agent_files.v1",
+    "clawchat.native_operation_barrier.v1",
     CAPABILITY,
     MARKETPLACE_TOOLS_CAPABILITY,
     MARKETPLACE_SKILL_INSTALL_CAPABILITY,
@@ -285,43 +288,18 @@ def _configured_default_model() -> str:
         return DEFAULT_MODEL
 
 
-def _runtime_model_catalog() -> dict[str, Any]:
-    """Return the same OpenAI Codex model catalogue Hermes exposes locally."""
+def _runtime_model_catalog() -> dict[str, Any] | None:
+    """Report the configured provider and model, not a static Codex list."""
     try:
-        from hermes_cli.codex_models import get_codex_model_ids
-
-        discovered = get_codex_model_ids()
-        models = list(
-            dict.fromkeys(
-                model.strip()
-                for model in discovered
-                if isinstance(model, str) and model.strip()
-            )
-        )
+        from hermes_cli.config import load_config
+        try:
+            from .model_catalog import configured_model_catalog
+        except ImportError:
+            from model_catalog import configured_model_catalog
+        return configured_model_catalog(load_config(), _now_iso())
     except Exception:
-        logger.warning(
-            "failed to discover Hermes Codex model catalogue",
-            exc_info=True,
-        )
-        models = []
-
-    configured_default = _configured_default_model()
-    if configured_default and configured_default not in models:
-        models.insert(0, configured_default)
-    if not models:
-        models = [configured_default or DEFAULT_MODEL]
-
-    return {
-        "runtimeType": "hermes",
-        "defaultModel": (
-            configured_default
-            if configured_default in models
-            else models[0]
-        ),
-        "models": models,
-        "source": "hermes-codex-discovery",
-        "observedAt": _now_iso(),
-    }
+        logger.warning("Hermes configured model catalogue unavailable")
+        return None
 
 
 def _safe_segment(value: str) -> str:
@@ -8279,6 +8257,8 @@ class ClawChatHermesBridge:
             return
         try:
             catalog = await asyncio.to_thread(_runtime_model_catalog)
+            if catalog is None:
+                return
             url = f"{self.config.api_url}/api/v1/bridge/runtime-model-catalog"
             async with session.post(
                 url,
@@ -8784,6 +8764,9 @@ class ClawChatHermesBridge:
                         "error": str(exc),
                     },
                 })
+            return
+        if msg_type == "clawchat.agent_file.operation":
+            await self.handle_agent_file(message.get("data") or {})
             return
         if msg_type == "hermes.agent.provision":
             data = message.get("data")
@@ -9876,6 +9859,45 @@ class ClawChatHermesBridge:
                     agent_id,
                     exc_info=True,
                 )
+
+    async def handle_agent_file(self, data: dict[str, Any]) -> None:
+        try:
+            from .agent_file_store import execute, recover
+        except ImportError:
+            from agent_file_store import execute, recover
+        state = str(_config_dir() / "native-files")
+        async def post(path, body):
+            if not self.session or not self.access_token:
+                raise RuntimeError("Bridge session unavailable")
+            async with self.session.post(f"{self.config.api_url}/api/v1/{path}", json=body,
+                    headers={"Authorization": f"Bearer {self.access_token}"}) as response:
+                response.raise_for_status()
+                payload = await response.json()
+                return payload.get("data", payload)
+        try:
+            if data.get("workspaceId") != self.config.workspace_id or data.get("runtimeType") != "hermes":
+                raise ValueError("File command scope mismatch")
+            for receipt in await asyncio.to_thread(recover, state):
+                await post(f"bridge/agent-files/{receipt['operationId']}/complete", receipt)
+                await asyncio.to_thread(recover, state, receipt['operationId'])
+            profile = self._refresh_native_profiles().get(data.get("externalAgentId"))
+            if not profile:
+                raise ValueError("Native profile unavailable")
+            operation = str(uuid.UUID(data["operationId"]))
+            await asyncio.to_thread(recover, state, None, data)
+            claim = await post(f"bridge/agent-files/{operation}/claim", {"requestHash": data["requestHash"]})
+            for key in ["operationId", "requestHash", "workspaceGeneration", "action", "path", "baseVersion", "contentHash"]:
+                if claim.get(key) != data.get(key):
+                    raise ValueError("File claim mismatch")
+            command = {**data, "_claimAllowed": claim.get("allowed") is True}
+            result = await asyncio.to_thread(execute, str(profile.home), state, command)
+            receipt = {key: value for key, value in result.items() if key not in {"content", "files", "folders"}}
+            await post(f"bridge/agent-files/{operation}/complete", receipt)
+            await asyncio.to_thread(recover, state, operation)
+            await self._send_raw({"type": "clawchat.agent_file.result", "data": {**result, "requestId": data.get("requestId")}})
+        except Exception:
+            logger.warning("Agent file operation did not complete")
+            await self._send_raw({"type": "clawchat.agent_file.error", "data": {"requestId": data.get("requestId"), "error": "AGENT_FILE_UNAVAILABLE"}})
 
     async def send_workspace_result(self, data: dict[str, Any]) -> None:
         logger.info(

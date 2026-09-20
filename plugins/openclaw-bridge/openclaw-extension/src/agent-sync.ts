@@ -7,7 +7,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import type { ChannelGatewayContext } from "openclaw/plugin-sdk";
 import type { ClawChatResolvedAccount } from "./types.js";
 import { resolveWorkspaceRoot } from "./agent-workspace.js";
-import { getBridgeClientMetadata } from "./bridge-auth.js";
+import { getBridgeClientMetadata, getCurrentBridgeConfig } from "./bridge-auth.js";
 import {
  isAllowedNativeDocumentPath,
  isSensitiveNativeDocumentName,
@@ -89,7 +89,7 @@ export async function runAgentReplicaSyncLoop(params: {
    let response: ExchangeResponse | null = null;
    while (!response) {
     try {
-     response = await exchangeAgentReplicas(params.ctx, params.accessToken, params.signal, protocol);
+     response = await exchangeAgentReplicas({ ...params.ctx, cfg: getCurrentBridgeConfig(params.ctx.cfg) }, params.accessToken, params.signal, protocol);
     } catch (error) {
      if (!(error instanceof ConnectorProtocolUnsupportedError)) throw error;
      if (protocol === RELAY_CONNECTOR_V3) {
