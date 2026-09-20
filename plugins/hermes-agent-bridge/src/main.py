@@ -9884,29 +9884,36 @@ class ClawChatHermesBridge:
                 response.raise_for_status()
                 payload = await response.json()
                 return payload.get("data", payload)
+        phase = "scope"
         try:
             if data.get("workspaceId") != self.config.workspace_id or data.get("runtimeType") != "hermes":
                 raise ValueError("File command scope mismatch")
+            phase = "recover"
             for receipt in await asyncio.to_thread(recover, state):
                 await post(f"bridge/agent-files/{receipt['operationId']}/complete", receipt)
                 await asyncio.to_thread(recover, state, receipt['operationId'])
+            phase = "profile"
             profile = self._refresh_native_profiles().get(data.get("externalAgentId"))
             if not profile:
                 raise ValueError("Native profile unavailable")
             operation = str(uuid.UUID(data["operationId"]))
             await asyncio.to_thread(recover, state, None, data)
+            phase = "claim"
             claim = await post(f"bridge/agent-files/{operation}/claim", {"requestHash": data["requestHash"]})
+            phase = "validate_claim"
             for key in ["operationId", "requestHash", "workspaceGeneration", "action", "path", "baseVersion", "contentHash"]:
                 if claim.get(key) != data.get(key):
                     raise ValueError("File claim mismatch")
             command = {**data, "_claimAllowed": claim.get("allowed") is True}
+            phase = "execute"
             result = await asyncio.to_thread(execute, str(profile.home), state, command)
             receipt = {key: value for key, value in result.items() if key not in {"content", "files", "folders"}}
+            phase = "complete"
             await post(f"bridge/agent-files/{operation}/complete", receipt)
             await asyncio.to_thread(recover, state, operation)
             await self._send_raw({"type": "clawchat.agent_file.result", "data": {**result, "requestId": data.get("requestId")}})
-        except Exception:
-            logger.warning("Agent file operation did not complete")
+        except Exception as exc:
+            logger.warning("Agent file operation did not complete phase=%s errorType=%s httpStatus=%s", phase, type(exc).__name__, getattr(exc, "status", None))
             await self._send_raw({"type": "clawchat.agent_file.error", "data": {"requestId": data.get("requestId"), "error": "AGENT_FILE_UNAVAILABLE"}})
 
     async def send_workspace_result(self, data: dict[str, Any]) -> None:
