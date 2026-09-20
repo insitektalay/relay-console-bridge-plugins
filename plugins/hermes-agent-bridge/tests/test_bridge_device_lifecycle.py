@@ -182,3 +182,19 @@ def test_bridge_process_lock_rejects_duplicate_owner_and_releases(tmp_path):
                 raise AssertionError("Duplicate owner was accepted")
     with main._bridge_process_lock(config):
         pass
+
+
+def test_stop_closes_connected_websocket():
+    class Socket:
+        closed = False
+        async def close(self):
+            self.closed = True
+    async def check():
+        bridge = object.__new__(main.ClawChatHermesBridge)
+        bridge._stop = asyncio.Event()
+        bridge.ws = Socket()
+        bridge.stop()
+        await asyncio.sleep(0)
+        assert bridge._stop.is_set()
+        assert bridge.ws.closed
+    asyncio.run(check())

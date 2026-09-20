@@ -8204,6 +8204,10 @@ class ClawChatHermesBridge:
 
     def stop(self) -> None:
         self._stop.set()
+        # Wake the websocket iterator so shutdown releases workers and the
+        # configuration lock before the service manager starts another owner.
+        if self.ws is not None and not self.ws.closed:
+            asyncio.get_running_loop().create_task(self.ws.close())
 
     async def _connect_once(self) -> None:
         self._agent_sync_protocol = RELAY_CONNECTOR_V3
