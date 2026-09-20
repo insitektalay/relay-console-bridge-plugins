@@ -25,7 +25,7 @@ def parts_for(path, directory=False):
     parts = path.split('/') if path else []
     if len(path) > 240 or len(parts) > 8 or any(not re.fullmatch(r'[A-Za-z0-9_ .-]+', p) or p.startswith('.') or p.lower() in BLOCKED for p in parts):
         raise ValueError('path')
-    parent = parts[0] if directory or len(parts) > 1 else ''
+    parent = parts[0] if parts and (directory or len(parts) > 1) else ''
     if parent and parent.lower() not in FAMILIES:
         raise ValueError('family')
     if not directory and (not parts or not re.search(r'\.(md|markdown|txt)$', parts[-1], re.I) or len(parts) == 1 and not re.search(r'\.(md|markdown)$', parts[0], re.I)):

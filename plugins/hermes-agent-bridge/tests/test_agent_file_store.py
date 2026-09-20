@@ -31,6 +31,12 @@ class AgentFiles(unittest.TestCase):
     def run_command(self, *args, **kwargs):
         return store.execute(str(self.root), self.state, self.command(*args, **kwargs))
 
+    def test_lists_agent_root_before_any_files_exist(self):
+        result = self.run_command('list', '')
+        self.assertEqual(result['status'], 'listed')
+        self.assertEqual(result['files'], [])
+        self.assertEqual(result['folders'], [])
+
     def test_create_read_edit_and_conflict(self):
         self.assertEqual(self.run_command('create', 'AGENTS.md', '# Instructions', 'absent')['status'], 'applied')
         first = self.run_command('read', 'AGENTS.md')
