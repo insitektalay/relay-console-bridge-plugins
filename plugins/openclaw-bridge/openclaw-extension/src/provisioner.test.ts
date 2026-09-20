@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, symlink, writeFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { safeProvisionFilePath } from "./provisioner.js";
+import { safeProvisionFilePath, bootstrapAuthFromMainAgent } from "./provisioner.js";
 
 test("provisioning files remain Markdown files inside the native workspace", async () => {
  const workspace = await mkdtemp(join(tmpdir(), "relay-openclaw-provision-"));
@@ -44,3 +44,14 @@ test("provisioning refuses symbolic-link traversal", async () => {
   /OPENCLAW_DOCUMENT_PATH_SYMBOLIC_LINK/,
  );
 });
+
+ test("SQLite auth runtimes do not receive obsolete JSON credential stores", async () => {
+  const home = await mkdtemp(join(tmpdir(), "relay-openclaw-auth-"));
+  try {
+   const source = join(home, "agents", "main", "agent");
+   await mkdir(source, { recursive: true });
+   await writeFile(join(source, "openclaw-agent.sqlite"), "fixture");
+   assert.deepEqual(bootstrapAuthFromMainAgent("new-agent", home), []);
+   assert.deepEqual(await readdir(join(home, "agents", "new-agent", "agent")), []);
+  } finally { await rm(home, { recursive: true, force: true }); }
+ });

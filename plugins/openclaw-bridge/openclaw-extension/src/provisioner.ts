@@ -251,13 +251,16 @@ function writeDefaultAuthProfiles(targetPath: string): void {
  );
 }
 
-function bootstrapAuthFromMainAgent(slug: string): string[] {
- const openClawHome = join(homedir(), ".openclaw");
+export function bootstrapAuthFromMainAgent(slug: string, openClawHome = join(homedir(), ".openclaw")): string[] {
  const sourceAgentDir = join(openClawHome, "agents", "main", "agent");
  const targetAgentDir = join(openClawHome, "agents", slug, "agent");
  const bootstrapped: string[] = [];
 
  mkdirSync(targetAgentDir, { recursive: true, mode: 0o700 });
+ // Current OpenClaw owns its SQLite auth store and provider inheritance.
+ // Legacy JSON seeds make those runtimes require an offline migration.
+ if (existsSync(join(sourceAgentDir, "openclaw-agent.sqlite")) ||
+     existsSync(join(targetAgentDir, "openclaw-agent.sqlite"))) return bootstrapped;
 
  const authProfilesFilename = "auth-profiles.json";
  const authProfilesSourcePath = join(sourceAgentDir, authProfilesFilename);
