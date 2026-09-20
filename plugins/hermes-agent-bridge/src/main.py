@@ -9043,7 +9043,9 @@ class ClawChatHermesBridge:
     async def _attempt_terminal_event_delivery(self, pending: PendingTerminalEvent, *, reason: str) -> None:
         if pending.acknowledged:
             return
-        if pending.attempts >= TERMINAL_EVENT_MAX_ATTEMPTS:
+        # A newly authenticated connection may follow a server repair. Retry
+            # the same saved receipt once, without running the agent again.
+            if pending.attempts >= TERMINAL_EVENT_MAX_ATTEMPTS and reason != "reconnect":
             logger.error(
                 "terminal event delivery exhausted waiting for terminal ack eventId=%s type=%s dispatchId=%s attempts=%s lastError=%s timestamp=%s",
                 pending.event_id,
@@ -9123,7 +9125,9 @@ class ClawChatHermesBridge:
         async with self._terminal_outbox_lock:
             pending_events = [pending for pending in self._terminal_outbox.values() if not pending.acknowledged]
         for pending in pending_events:
-            if pending.attempts >= TERMINAL_EVENT_MAX_ATTEMPTS:
+            # A newly authenticated connection may follow a server repair. Retry
+            # the same saved receipt once, without running the agent again.
+            if pending.attempts >= TERMINAL_EVENT_MAX_ATTEMPTS and reason != "reconnect":
                 if not pending.exhausted_logged:
                     pending.exhausted_logged = True
                     logger.error(

@@ -28,4 +28,22 @@ class ControlSubscriptionTests(unittest.TestCase):
         self.assertEqual(order[0], {'type':'subscribe_bridge_control','workspaceId':'workspace-1','capabilities':['clawchat.agent_files.v1']})
         self.assertEqual(order[1], 'inventory')
 
+class TerminalReconnectTests(unittest.TestCase):
+    def test_reconnect_retries_the_same_exhausted_receipt(self):
+        source = Path(__file__).parents[1] / 'src' / 'main.py'
+        tree = ast.parse(source.read_text())
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'ClawChatHermesBridge')
+        method = next(n for n in cls.body if isinstance(n, ast.AsyncFunctionDef) and n.name == '_flush_terminal_outbox')
+        namespace = dict(logger=logging.getLogger('test'), TERMINAL_EVENT_MAX_ATTEMPTS=2)
+        exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), 'exec'), namespace)
+        async def run():
+            pending = SimpleNamespace(acknowledged=False, attempts=2, exhausted_logged=True)
+            send = AsyncMock()
+            bridge = SimpleNamespace(_terminal_outbox_lock=asyncio.Lock(), _terminal_outbox={'same-event':pending}, _attempt_terminal_event_delivery=send)
+            await namespace['_flush_terminal_outbox'](bridge, reason='retry')
+            send.assert_not_awaited()
+            await namespace['_flush_terminal_outbox'](bridge, reason='reconnect')
+            send.assert_awaited_once_with(pending, reason='reconnect')
+        asyncio.run(run())
+
 if __name__ == '__main__': unittest.main()
