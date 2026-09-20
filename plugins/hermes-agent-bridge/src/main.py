@@ -8583,6 +8583,16 @@ class ClawChatHermesBridge:
                 ",".join(BRIDGE_CAPABILITIES),
                 MARKETPLACE_LOCAL_APP_AGENT_API_REQUEST_CAPABILITY in BRIDGE_CAPABILITIES,
             )
+            # Native files and scheduler operations use the workspace control
+            # channel, including when this host has no agents yet.
+            authenticated = message.get("data") or {}
+            workspace_id = str(authenticated.get("workspaceId") or self.config.workspace_id or "").strip()
+            if workspace_id:
+                await self._send_raw({
+                    "type": "subscribe_bridge_control",
+                    "workspaceId": workspace_id,
+                    "capabilities": BRIDGE_CAPABILITIES,
+                })
             synchronized_agent_ids = await self._exchange_agent_replicas()
             self._registered_agent_ids = list(
                 dict.fromkeys(synchronized_agent_ids)
