@@ -256,3 +256,19 @@ test("credential rotation uses the dedicated endpoint and returns the replacemen
  assert.equal(requestBody.runtimeType, "openclaw");
  assert.equal(response.credentials?.deviceToken, "replacement-secret");
 });
+
+test("concurrent operations reuse valid tokens without rotating an active dispatch", async (t) => {
+ let savedConfig: any = { channels: { clawchat: { apiUrl: "https://relay.example.com", workspaceId: "workspace-1", devicePublicId: "bdev_public", deviceToken: "initial-secret" } } };
+ let requests = 0;
+ t.mock.method(globalThis, "fetch", async () => {
+  requests++;
+  return new Response(JSON.stringify({ tokens: { accessToken: "access", wsToken: "ws", accessExpiresIn: 900, wsExpiresIn: 900 }, credentials: { devicePublicId: "bdev_public", deviceToken: "replacement" } }), { status: 200 });
+ });
+ t.after(configureBridgeCredentialPersistence({ loadConfig: () => savedConfig, writeConfigFile: async config => { savedConfig = config; } }));
+ const input = { apiUrl: "https://relay.example.com", devicePublicId: "bdev_public", deviceToken: "initial-secret" };
+ const [first, second] = await Promise.all([authenticateBridgeDevice(input), authenticateBridgeDevice(input)]);
+ assert.equal(requests, 1);
+ assert.equal(first.tokens?.accessToken, second.tokens?.accessToken);
+ await authenticateBridgeDevice(input);
+ assert.equal(requests, 1);
+});

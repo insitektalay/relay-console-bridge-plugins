@@ -36,6 +36,8 @@ export type BridgeAuthResponse = {
  tokens?: {
   accessToken?: string;
   wsToken?: string;
+  accessExpiresIn?: number;
+  wsExpiresIn?: number;
  };
  wsToken?: string;
  token?: string;
@@ -53,6 +55,7 @@ type BridgeCredentialPersistence = {
 
 let credentialPersistence: BridgeCredentialPersistence | null = null;
 let authenticationTail: Promise<unknown> = Promise.resolve();
+const sessions = new Map<string, { response: BridgeAuthResponse; expiresAt: number }>();
 const volatileCredentials = new Map<string, string>();
 
 export function configureBridgeCredentialPersistence(
@@ -63,6 +66,7 @@ export function configureBridgeCredentialPersistence(
   if (credentialPersistence === persistence) credentialPersistence = null;
   authenticationTail = Promise.resolve();
   volatileCredentials.clear();
+  sessions.clear();
  };
 }
 
@@ -325,7 +329,17 @@ export function authenticateBridgeDevice(input: {
  // globally so two accounts cannot each rotate successfully and then overwrite
  // the other account's freshly persisted credential with a stale config copy.
  const current = authenticationTail.catch(() => undefined)
-  .then(() => authenticateAndPersistReplacement({ ...input, apiUrl }));
+  .then(async () => {
+   const key = `${apiUrl}\n${input.devicePublicId}`;
+   const cached = sessions.get(key);
+   if (cached && cached.expiresAt > Date.now()) return cached.response;
+   const response = await authenticateAndPersistReplacement({ ...input, apiUrl });
+   const seconds = Math.min(response.tokens?.accessExpiresIn ?? 0, response.tokens?.wsExpiresIn ?? 0);
+   if (Number.isFinite(seconds) && seconds > 30) {
+    sessions.set(key, { response, expiresAt: Date.now() + (seconds - 30) * 1000 });
+   }
+   return response;
+  });
  authenticationTail = current;
  return current;
 }
@@ -337,6 +351,7 @@ export async function rotateBridgeDeviceCredential(input: {
  extraCapabilities?: string[];
 }): Promise<BridgeEnrollmentResponse & BridgeAuthResponse> {
  const apiUrl = requireSecureRelayApiUrl(input.apiUrl);
+ sessions.delete(`${apiUrl}\n${input.devicePublicId}`);
  const resp = await fetch(`${apiUrl}/api/v1/bridge/device/rotate`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },

@@ -254,6 +254,7 @@ async function sendBridgeRuntimeEvent(
  threadId: string,
 ): Promise<void> {
  if (!dispatchId) return;
+ accessToken = (await getBridgeTokens(account)).accessToken;
 
  const path = `/api/v1/bridge/runtime-dispatches/${encodeURIComponent(dispatchId)}/events`;
  log?.info?.(`[clawchat] POST ${path} started agent="${agentId}" thread=${threadId} event=${event.type}`);
@@ -580,11 +581,12 @@ async function dispatchAgentWork(
       log,
      });
 
+     const replyAccessToken = (await getBridgeTokens(account)).accessToken;
      const deliverResp = await fetch(`${account.apiUrl}/api/v1/bridge/messages`, {
       method: "POST",
       headers: {
        "Content-Type": "application/json",
-       Authorization: `Bearer ${accessToken}`,
+       Authorization: `Bearer ${replyAccessToken}`,
       },
       body: JSON.stringify({
        threadId: payload.threadId,
