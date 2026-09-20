@@ -1,3 +1,4 @@
+import { fileResponses } from "./file-response-relay.js";
 import { configuredModelCatalog } from "./model-catalog.js";
 import { resolveWorkspaceRoot } from "./agent-workspace.js";
 import { homedir as fileHome } from "node:os";
@@ -784,6 +785,8 @@ export async function startClawChatGatewayAccount(
  log?.info?.(`[clawchat] connecting to ${wsUrl}`);
 
  const ws = new WebSocket(wsUrl);
+ const fileResponseScope = `${account.apiUrl}\n${account.workspaceId}\n${account.devicePublicId}`;
+ let disconnectFileResponses: (() => void) | undefined;
 
  // Tear down on abort
  const onAbort = () => ws.close(1000, "shutdown");
@@ -846,6 +849,9 @@ export async function startClawChatGatewayAccount(
 
     // Mark bridge ready and drain any dispatches that arrived before auth completed
     bridgeReady = true;
+    disconnectFileResponses = fileResponses.connect(fileResponseScope, message => {
+     if (ws.readyState === WebSocket.OPEN) sendWsMessage(ws, log, message);
+    });
     if (pendingDispatches.length > 0) {
      log?.info?.(`[clawchat] draining ${pendingDispatches.length} dispatch(es) queued before bridge ready`);
      for (const queued of pendingDispatches) {
@@ -1031,8 +1037,8 @@ export async function startClawChatGatewayAccount(
      if (!response.ok) throw new Error("Agent file request unavailable");
      const result = await response.json() as any;
      return result.data ?? result;
-    } }).then(result => sendWsMessage(ws, log, { type: "clawchat.agent_file.result", data: { ...result, requestId: command.requestId } }))
-     .catch(() => sendWsMessage(ws, log, { type: "clawchat.agent_file.error", data: { requestId: command.requestId, error: "AGENT_FILE_UNAVAILABLE" } }));
+    } }).then(result => fileResponses.deliver(fileResponseScope, { type: "clawchat.agent_file.result", data: { ...result, requestId: command.requestId } }))
+     .catch(() => fileResponses.deliver(fileResponseScope, { type: "clawchat.agent_file.error", data: { requestId: command.requestId, error: "AGENT_FILE_UNAVAILABLE" } }));
     } catch {
      sendWsMessage(ws, log, { type: "clawchat.agent_file.error", data: { requestId: command.requestId, error: "AGENT_FILE_UNAVAILABLE" } });
     }
@@ -1079,6 +1085,7 @@ export async function startClawChatGatewayAccount(
   });
 
   ws.addEventListener("close", (event: CloseEvent) => {
+   disconnectFileResponses?.();
    log?.warn?.(
     `[clawchat] websocket closed code=${event.code} reason=${event.reason || "<none>"} clean=${event.wasClean}`,
    );
