@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {handleNativeControl,nativeDigest,profileSnapshot,changeProfile,configureNativeProfileRuntime} from './native-controls.js';
 test('profile mutation preserves credentials and other agents; rejects stale or invalid edit',()=>{
@@ -53,5 +55,17 @@ test('profile write compares the same runtime-normalized base as the read',async
  try{
   await handleNativeControl({kind:'profile',command:claim,stateDir,workspaceId:'workspace',post:async(path,body)=>{if(path.endsWith('/claim'))return claim;receipt=body;return{recorded:true};}});
   assert.equal(receipt.status,'applied');assert.equal(writes,1);assert.equal(live.agents.entries.one.identity.theme,'Updated');
+ }finally{await rm(stateDir,{recursive:true,force:true});}
+});
+
+test('receipt recovery closes prepared work and preserves unknown started work',async()=>{
+ const stateDir=await mkdtemp(join(tmpdir(),'control-recovery-'));const old= randomUUID(),started=randomUUID();
+ const journal=(mode:string,id:string)=>JSON.parse(execFileSync('python3',[fileURLToPath(new URL('./native_operation_store.py',import.meta.url))],{input:JSON.stringify({stateDir,mode,kind:'cron',operationId:id,requestHash:'a'.repeat(64)}),encoding:'utf8'}));
+ journal('reserve',old);journal('reserve',started);journal('start',started);
+ const claim={operationId:randomUUID(),accountId:'a',workspaceId:'w',agentId:'g',runtimeType:'openclaw',action:'read',expiresAt:'2099-01-01T00:00:00Z',allowed:true,canStart:true,requestHash:nativeDigest({account:'a',workspace:'w',agent:'g',action:'read',baseVersion:null,changes:null})};
+ const recovered:any[]=[];
+ try{
+  await handleNativeControl({kind:'profile',command:claim,stateDir,workspaceId:'w',post:async(path,body)=>{if(path.endsWith('/claim'))return claim;if(path.includes(old))recovered.push(body);return{recorded:true,operationId:body.operationId};},apply:async()=>({status:'read',profile:{name:'One'}})});
+  assert.equal(recovered.length,1);assert.equal(recovered[0].noStart,true);assert.equal(recovered[0].nativeInactive,true);assert.equal(journal('reserve',started).phase,'started');
  }finally{await rm(stateDir,{recursive:true,force:true});}
 });

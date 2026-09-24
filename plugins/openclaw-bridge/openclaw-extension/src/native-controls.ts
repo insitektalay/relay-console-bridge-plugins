@@ -64,8 +64,20 @@ async function cron(command:any) {
  if(!Array.isArray(jobs)||jobs.length>500)throw Error('Invalid cron inventory');
  return {status:'confirmed',runtimeType:'openclaw',jobs,canEdit:false,scheduler:{available:true,running:true,message:'Native OpenClaw gateway responded'}};
 }
+async function recover(stateDir:string,post:Input['post'],currentOperation:string) {
+ // Runs inside the per-state operation queue; unknown started work stays fenced.
+ for(const item of await store({stateDir,mode:'pending'})) {
+  if(item.operationId===currentOperation)continue;
+  const id={stateDir,kind:item.kind,operationId:item.operationId,requestHash:item.requestHash};
+  const receipt=item.receipt??{operationId:item.operationId,requestHash:item.requestHash,status:item.kind==='profile'?'failed':'unconfirmed',noStart:true,nativeInactive:true};
+  if(!item.receipt)await store({...id,mode:'finish',receipt});
+  try {const accepted=await post(`bridge/${item.kind==='profile'?'agent-profile':'native-cron'}/${item.operationId}/complete`,receipt);if(accepted.recorded!==true||accepted.operationId!==item.operationId)continue;}catch{continue;}
+  await store({...id,mode:'acknowledge'});
+ }
+}
 async function perform(input:Input) {
  const {kind,command:envelope,workspaceId,stateDir,post}=input;
+ await recover(stateDir,post,envelope.operationId);
  const id={stateDir,kind,operationId:envelope.operationId,requestHash:envelope.requestHash};
  const saved=await store({...id,mode:'reserve'});
  const complete=kind==='profile'?`bridge/agent-profile/${id.operationId}/complete`:`bridge/native-cron/${id.operationId}/complete`;
@@ -86,6 +98,6 @@ async function perform(input:Input) {
   try{result=await(input.apply??(kind==='profile'?applyProfile:cron))(command);receipt.status=result.status;if(kind==='profile')receipt.profile=result.profile;}
   catch{receipt.status=kind==='profile'?'outcome_unknown':'unconfirmed';result=receipt;}
  }
- await store({...id,mode:'finish',receipt});await post(complete,receipt);
+ await store({...id,mode:'finish',receipt});await post(complete,receipt);await store({...id,mode:'acknowledge'});
  return kind==='profile'?{operationId:id.operationId,status:'recorded'}:{...result,operationId:id.operationId,requestHash:id.requestHash,agentId:claim.agentId,runtimeType:'openclaw'};
 }

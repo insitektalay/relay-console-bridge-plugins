@@ -47,4 +47,22 @@ class Controls(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(ValueError,'delivery device changed'):
                 await controls.handle('cron',{**envelope,'operationId':str(uuid.uuid4()),'bridgeDeviceId':'wrong'},'workspace',state,lambda *args: asyncio.sleep(0,result={**command,'operationId':args[1]['operationId'],'allowed':True}),apply)
 
+    async def test_recovery_preserves_receipts_and_never_invents_started_completion(self):
+        with tempfile.TemporaryDirectory() as state:
+            prepared,completed,started=[str(uuid.uuid4()) for _ in range(3)]
+            for operation,kind in [(prepared,'cron'),(completed,'profile'),(started,'profile')]:
+                journal(state,'reserve',kind,operation,'a'*64)
+            receipt={'operationId':completed,'requestHash':'a'*64,'status':'outcome_unknown','nativeInactive':True}
+            journal(state,'start','profile',completed,'a'*64)
+            journal(state,'finish','profile',completed,'a'*64,receipt)
+            journal(state,'start','profile',started,'a'*64)
+            calls=[]
+            async def post(path,body): calls.append((path,body));return {'recorded':True,'operationId':body['operationId']}
+            await controls.recover(state,post,'current')
+            self.assertEqual(len(calls),2)
+            self.assertTrue(calls[0][1]['noStart']);self.assertEqual(calls[1][1],receipt)
+            await controls.recover(state,post,'current')
+            self.assertEqual(len(calls),2)
+            self.assertEqual(journal(state,'reserve','profile',started,'a'*64)['phase'],'started')
+
 if __name__=='__main__': unittest.main()

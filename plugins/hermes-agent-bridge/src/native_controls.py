@@ -2,16 +2,36 @@
 import asyncio, hashlib, json, time
 from datetime import datetime
 try:
-    from .native_operation_store import journal
+    from .native_operation_store import journal, pending
 except ImportError:
-    from native_operation_store import journal
+    from native_operation_store import journal, pending
 
 
 def digest(value):
     return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
 
 
+async def recover(state, post, current_operation):
+    # Called inside the bridge's operation lock. A prepared row never started;
+    # a started row without a saved receipt is deliberately left fenced.
+    for item in await asyncio.to_thread(pending,state):
+        if item['operationId']==current_operation: continue
+        receipt=item['receipt']
+        if receipt is None:
+            receipt={'operationId':item['operationId'],'requestHash':item['requestHash'],
+                     'status':'failed' if item['kind']=='profile' else 'unconfirmed','noStart':True,'nativeInactive':True}
+            await asyncio.to_thread(journal,state,'finish',item['kind'],item['operationId'],item['requestHash'],receipt)
+        route='agent-profile' if item['kind']=='profile' else 'native-cron'
+        try:
+            accepted=await post(f"bridge/{route}/{item['operationId']}/complete",receipt)
+            if accepted.get('recorded') is not True or accepted.get('operationId')!=item['operationId']: continue
+        except Exception:
+            continue  # Keep the exact receipt for a later authenticated retry.
+        await asyncio.to_thread(journal,state,'acknowledge',item['kind'],item['operationId'],item['requestHash'])
+
+
 async def handle(kind, envelope, workspace, state, post, apply):
+    await recover(state,post,envelope['operationId'])
     operation, request_hash = envelope['operationId'], envelope['requestHash']
     saved = await asyncio.to_thread(journal,state,'reserve',kind,operation,request_hash)
     completion = f'bridge/agent-profile/{operation}/complete' if kind=='profile' else f'bridge/native-cron/{operation}/complete'
@@ -51,5 +71,6 @@ async def handle(kind, envelope, workspace, state, post, apply):
             result=receipt
     await asyncio.to_thread(journal,state,'finish',kind,operation,request_hash,receipt)
     await post(completion,receipt)
+    await asyncio.to_thread(journal,state,'acknowledge',kind,operation,request_hash)
     if kind=='profile': return {'operationId':operation,'status':'recorded'}
     return {**result,'operationId':operation,'requestHash':request_hash,'agentId':command['agentId'],'runtimeType':'hermes'}
