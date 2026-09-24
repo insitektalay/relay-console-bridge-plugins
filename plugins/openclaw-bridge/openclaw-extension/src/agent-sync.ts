@@ -4,7 +4,7 @@ import type { Dirent } from "node:fs";
 import { lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import type { ChannelGatewayContext } from "openclaw/plugin-sdk";
+import type { ChannelGatewayContext } from "openclaw/plugin-sdk/channel-contract";
 import type { ClawChatResolvedAccount } from "./types.js";
 import { resolveWorkspaceRoot } from "./agent-workspace.js";
 import { getBridgeClientMetadata, getCurrentBridgeConfig } from "./bridge-auth.js";
@@ -161,8 +161,8 @@ export async function exchangeAgentReplicas(
   }
   const localProfile = {
    externalId,
-   name: entry?.name?.trim() || externalId,
-   role: "assistant",
+   name: entry?.identity?.name?.trim() || entry?.name?.trim() || externalId,
+   role: entry?.identity?.theme ?? "assistant",
    status: "active",
    modelPrimary: typeof entry?.model === "string" ? entry.model : entry?.model?.primary,
    nativeKind: "openclaw_agent",
@@ -295,7 +295,7 @@ async function applyResponse(
   const entry = nativeAgentEntries(ctx.cfg).find((candidate) => candidate.id === agent.externalId);
   state.profiles[agent.externalId] = {
    serverVersion: String(agent.profileServerVersion),
-   localHash: hash(JSON.stringify({ externalId: agent.externalId, name: entry?.name?.trim() || agent.externalId, role: "assistant", status: "active", modelPrimary: typeof entry?.model === "string" ? entry.model : entry?.model?.primary })),
+   localHash: hash(JSON.stringify({ externalId: agent.externalId, name: entry?.identity?.name?.trim() || entry?.name?.trim() || agent.externalId, role: entry?.identity?.theme ?? "assistant", status: "active", modelPrimary: typeof entry?.model === "string" ? entry.model : entry?.model?.primary })),
    canonicalAgentId: agent.canonicalAgentId ?? state.profiles[agent.externalId]?.canonicalAgentId,
    bindingEpoch: agent.bindingEpoch ?? state.profiles[agent.externalId]?.bindingEpoch,
   };

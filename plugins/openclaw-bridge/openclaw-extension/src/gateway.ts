@@ -1,3 +1,4 @@
+import { handleNativeControl } from "./native-controls.js";
 import { fileResponses } from "./file-response-relay.js";
 import { configuredModelCatalog } from "./model-catalog.js";
 import { resolveWorkspaceRoot } from "./agent-workspace.js";
@@ -5,7 +6,7 @@ import { homedir as fileHome } from "node:os";
 import { join as fileJoin } from "node:path";
 import { handleAgentFile } from "./agent-files.js";
 import { nativeAgentEntries } from "./native-agents.js";
-import type { ChannelGatewayContext } from "openclaw/plugin-sdk";
+import type { ChannelGatewayContext } from "openclaw/plugin-sdk/channel-contract";
 import { isDiagnosticsEnabled, onInternalDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -1020,6 +1021,22 @@ export async function startClawChatGatewayAccount(
    if (type === "library.delete" && msg.data) {
     log?.info?.(`[clawchat] bridge control received library.delete requestId=${(msg.data as { requestId?: string }).requestId ?? "<missing>"}`);
     handleLibraryDelete(wsSend, msg.data as Parameters<typeof handleLibraryDelete>[1], log);
+    return;
+   }
+
+   if ((type === "clawchat.agent_profile.operation" || type === "clawchat.native_cron.operation") && msg.data) {
+    const command = msg.data as Record<string, any>;
+    const event = type.slice(0, -".operation".length);
+    handleNativeControl({ kind: type.includes("agent_profile") ? "profile" : "cron", command,
+     workspaceId: account.workspaceId!, stateDir: fileJoin(fileHome(), ".openclaw", "clawchat", "native-controls", account.workspaceId!),
+     post: async (path, body) => {
+      const token = (await getBridgeTokens(account)).accessToken;
+      const response = await fetch(`${account.apiUrl}/api/v1/${path}`, {method:"POST", headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"}, body:JSON.stringify(body), signal:AbortSignal.timeout(20000)});
+      if(!response.ok) throw new Error("Native control unavailable");
+      const result = await response.json() as any; return result.data ?? result;
+     }
+    }).then(result => fileResponses.deliver(fileResponseScope,{type:event+".result",data:{...result,requestId:command.requestId}}))
+     .catch(() => fileResponses.deliver(fileResponseScope,{type:event+".error",data:{requestId:command.requestId,error:"NATIVE_CONTROL_UNAVAILABLE"}}));
     return;
    }
 

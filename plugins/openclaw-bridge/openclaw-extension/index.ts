@@ -1,3 +1,4 @@
+import { configureNativeProfileRuntime } from "./src/native-controls.js";
 import { readBridgeRuntimeConfig, writeBridgeRuntimeConfig } from "./src/runtime-config.js";
 import type { ChannelPlugin, OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk/core";
@@ -11,6 +12,7 @@ const plugin = {
   description: "Relay Console bridge channel — receive and reply to AI agent threads",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi) {
+    configureNativeProfileRuntime(api.runtime.config);
     configureBridgeCredentialPersistence({
       loadConfig: () => readBridgeRuntimeConfig(api.runtime.config),
       writeConfigFile: (config) => writeBridgeRuntimeConfig(api.runtime.config, config),

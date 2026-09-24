@@ -23,7 +23,7 @@ class ControlSubscriptionTests(unittest.TestCase):
             return []
         bridge = SimpleNamespace(config=SimpleNamespace(workspace_id='old-workspace'), _send_raw=send,
             _exchange_agent_replicas=exchange, _start_terminal_retry_task=Mock(), _start_agent_sync_task=Mock(),
-            _flush_terminal_outbox=AsyncMock(), _run_reconnect_backfill=AsyncMock())
+            _flush_native_replies=AsyncMock(), _flush_terminal_outbox=AsyncMock(), _run_reconnect_backfill=AsyncMock())
         asyncio.run(namespace['_handle_ws_text'](bridge,json.dumps({'type':'authenticated','data':{'workspaceId':'workspace-1'}})))
         self.assertEqual(order[0], {'type':'subscribe_bridge_control','workspaceId':'workspace-1','capabilities':['clawchat.agent_files.v1']})
         self.assertEqual(order[1], 'inventory')

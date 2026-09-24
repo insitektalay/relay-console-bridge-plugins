@@ -35,15 +35,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$OVERLAY/clawchat_bridge" "$OVERLAY/tests" "$OVERLAY/contracts/fixtures"
+mkdir -p "$OVERLAY/clawchat_bridge" "$OVERLAY/hermes/tests" "$OVERLAY/contracts/fixtures"
 cp "$ROOT/plugins/hermes-agent-bridge/src/"*.py "$OVERLAY/clawchat_bridge/"
-cp "$ROOT/plugins/hermes-agent-bridge/tests/"*.py "$OVERLAY/tests/"
+cp "$ROOT/plugins/hermes-agent-bridge/tests/"*.py "$OVERLAY/hermes/tests/"
 cp "$ROOT/contracts/fixtures/"*.json "$OVERLAY/contracts/fixtures/"
 touch "$OVERLAY/clawchat_bridge/__init__.py"
+# File-level tests resolve ../src; package-level tests import clawchat_bridge.
+ln -s ../clawchat_bridge "$OVERLAY/hermes/src"
+mkdir -p "$OVERLAY/openclaw-bridge/openclaw-extension/src"
+cp "$ROOT/plugins/openclaw-bridge/openclaw-extension/src/agent_file_store.py" "$OVERLAY/openclaw-bridge/openclaw-extension/src/"
 
 (
   cd "$HERMES"
   RELAY_CONNECTOR_FIXTURE_DIR="$OVERLAY/contracts/fixtures" \
     PYTHONPATH="$OVERLAY:$HERMES${PYTHONPATH:+:$PYTHONPATH}" \
-    "$PYTHON" -m pytest -q "$OVERLAY/tests"
+    "$PYTHON" -m pytest -q "$OVERLAY/hermes/tests"
 )

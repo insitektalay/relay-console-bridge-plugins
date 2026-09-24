@@ -32,33 +32,17 @@ class FakeSession:
         return FakeResponse(self.status)
 
 
-def test_runtime_model_catalog_matches_hermes_discovery(monkeypatch):
-    monkeypatch.setattr(
-        main,
-        "_configured_default_model",
-        lambda: "gpt-5.5",
-    )
+def test_runtime_model_catalog_matches_configured_hermes_model(monkeypatch):
     hermes_cli = types.ModuleType("hermes_cli")
-    codex_models = types.ModuleType("hermes_cli.codex_models")
-    codex_models.get_codex_model_ids = lambda: [
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.5",
-        "gpt-5.6-sol",
-    ]
+    config = types.ModuleType("hermes_cli.config")
+    config.load_config = lambda: {"model": {"default": "gpt-5.5", "provider": "openai-codex"}}
     monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
-    monkeypatch.setitem(sys.modules, "hermes_cli.codex_models", codex_models)
-
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
     catalog = main._runtime_model_catalog()
-
     assert catalog["runtimeType"] == "hermes"
     assert catalog["defaultModel"] == "gpt-5.5"
-    assert catalog["models"] == [
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.5",
-    ]
-    assert catalog["source"] == "hermes-codex-discovery"
+    assert catalog["models"] == ["gpt-5.5"]
+    assert catalog["source"] == "hermes-configured-model"
 
 
 def test_authenticated_bridge_publishes_catalog_without_exposing_token(monkeypatch):

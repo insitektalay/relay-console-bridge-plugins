@@ -127,7 +127,10 @@ class AgentFiles(unittest.TestCase):
                 access_token = 'fixture-token'
                 session = Session()
                 def _refresh_native_profiles(_): return {'profile:example': types.SimpleNamespace(home=self.root)}
-                async def _send_raw(_, message): messages.append(message)
+                async def _post_native_control(self, path, body):
+                    async with self.session.post(path, json=body, headers={}) as response:
+                        return await response.json()
+                async def _send_native_reply(_, message): messages.append(message)
             asyncio.run(Bridge().handle_agent_file(command))
             self.assertEqual(messages[-1]['type'], 'clawchat.agent_file.result')
             self.assertEqual(messages[-1]['data']['status'], 'applied')

@@ -148,7 +148,7 @@ export function getBridgeClientCapabilities(extraCapabilities: string[] = []): s
  if (!nativeFileSupport) {
   try {
    execFileSync("python3", ["-c", "import fcntl, sqlite3"], { timeout: 3000, stdio: "ignore" });
-   nativeFileSupport = ["clawchat.agent_files.v1", "clawchat.native_operation_barrier.v1"];
+   nativeFileSupport = ["clawchat.agent_files.v1", "clawchat.native_operation_barrier.v1", "clawchat.agent_profile.v1", "clawchat.native_cron.v1"];
   } catch { nativeFileSupport = []; }
  }
  return [...new Set([...DEFAULT_CAPABILITIES, ...nativeFileSupport, ...extraCapabilities].filter(Boolean))];

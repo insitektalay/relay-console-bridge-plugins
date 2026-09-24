@@ -61,13 +61,18 @@ def enumerate_native_profiles() -> list[NativeHermesProfile]:
         if not home.is_dir():
             continue
         seen.add(external_id)
+        # Relay display fields live with this profile, without renaming its
+        # stable native directory or external ID.
+        import yaml
+        config = yaml.safe_load((home / "config.yaml").read_text()) if (home / "config.yaml").is_file() else {}
+        relay = (config or {}).get("relay_profile") or {}
         profiles.append(
             NativeHermesProfile(
                 external_id=external_id,
                 native_name=native_name,
                 home=home,
-                display_name="Default Hermes profile" if native_name == "default" else native_name,
-                description=str(getattr(info, "description", "") or "").strip(),
+                display_name=relay.get("name") or ("Default Hermes profile" if native_name == "default" else native_name),
+                description=str(relay.get("role", getattr(info, "description", "")) or "").strip(),
                 model=str(info.model).strip() if getattr(info, "model", None) else None,
                 provider=str(info.provider).strip() if getattr(info, "provider", None) else None,
                 skill_count=max(0, int(getattr(info, "skill_count", 0) or 0)),

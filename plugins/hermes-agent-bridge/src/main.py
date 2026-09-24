@@ -86,6 +86,8 @@ RELAY_CONNECTOR_V3 = "relay-connector.v3"
 RELAY_CONNECTOR_V2 = "relay-connector.v2"
 AGENT_REPLICA_V1 = "agent-replica.v1"
 BRIDGE_CAPABILITIES = [
+    "clawchat.agent_profile.v1",
+    "clawchat.native_cron.v1",
     "clawchat.agent_files.v1",
     "clawchat.native_operation_barrier.v1",
     CAPABILITY,
@@ -8057,6 +8059,10 @@ class ClawChatHermesBridge:
         self.session: aiohttp.ClientSession | None = None
         self.ws: aiohttp.ClientWebSocketResponse | None = None
         self.access_token: str | None = None
+        self._native_control_lock = asyncio.Lock()
+        self._native_http_lock = asyncio.Lock()
+        self._native_replies = {}
+        self._native_reconnect_required = False
         self.run_manager = HermesRunManager(self)
         self.workspace_manager = HermesWorkspaceManager()
         self.marketplace_installer = MarketplaceSkillInstaller()
@@ -8593,6 +8599,8 @@ class ClawChatHermesBridge:
                     "workspaceId": workspace_id,
                     "capabilities": BRIDGE_CAPABILITIES,
                 })
+            self._native_reconnect_required = False
+            await self._flush_native_replies()
             synchronized_agent_ids = await self._exchange_agent_replicas()
             self._registered_agent_ids = list(
                 dict.fromkeys(synchronized_agent_ids)
@@ -8774,6 +8782,9 @@ class ClawChatHermesBridge:
                         "error": str(exc),
                     },
                 })
+            return
+        if msg_type in {"clawchat.agent_profile.operation", "clawchat.native_cron.operation"}:
+            await self.handle_native_control("profile" if "agent_profile" in msg_type else "cron", message.get("data") or {})
             return
         if msg_type == "clawchat.agent_file.operation":
             await self.handle_agent_file(message.get("data") or {})
@@ -9874,20 +9885,103 @@ class ClawChatHermesBridge:
                     exc_info=True,
                 )
 
+    async def handle_native_control(self, kind: str, envelope: dict[str, Any]) -> None:
+        try:
+            from .native_controls import handle
+            from .native_profile_control import apply as profile_apply
+        except ImportError:
+            from native_controls import handle
+            from native_profile_control import apply as profile_apply
+        event = "clawchat.agent_profile" if kind == "profile" else "clawchat.native_cron"
+        async def apply(action_kind, command):
+            profile = self._refresh_native_profiles().get(command.get("externalAgentId"))
+            if not profile:
+                raise ValueError("Native agent is unavailable")
+            if action_kind == "profile":
+                return await asyncio.to_thread(profile_apply, profile, command)
+            if command.get("action") == "update" and not profile.gateway_running:
+                raise ValueError("Start the native scheduler before editing its jobs")
+            import hermes_cli
+            env = os.environ.copy()
+            env["HERMES_HOME"] = str(profile.home)
+            env["PYTHONPATH"] = str(Path(hermes_cli.__file__).resolve().parent.parent)
+            process = await asyncio.create_subprocess_exec(sys.executable, str(Path(__file__).with_name("relay_native_cron.py")),
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=env)
+            try:
+                output, _ = await asyncio.wait_for(process.communicate(json.dumps(command).encode()), 20)
+            except BaseException:
+                if process.returncode is None:
+                    process.kill()
+                await process.wait()
+                raise
+            if process.returncode or len(output) > 256_000:
+                raise ValueError("Native cron request did not complete")
+            result = json.loads(output)
+            result["canEdit"] = result.get("canEdit") is True and profile.gateway_running
+            result["scheduler"] = {"available": True, "running": profile.gateway_running,
+                "message": "Native Hermes scheduler" if profile.gateway_running else "Native Hermes gateway is stopped"}
+            return result
+        try:
+            async with self._native_control_lock:
+                result = await handle(kind, envelope, self.config.workspace_id, str(_config_dir() / "native-controls"), self._post_native_control, apply)
+            await self._send_native_reply({"type": event + ".result", "data": {**result, "requestId": envelope.get("requestId")}})
+        except Exception as exc:
+            logger.warning("Native control unavailable kind=%s errorType=%s", kind, type(exc).__name__)
+            await self._send_native_reply({"type": event + ".error", "data": {"requestId": envelope.get("requestId"), "error": "NATIVE_CONTROL_UNAVAILABLE"}})
+
+    async def _post_native_control(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        # Retry only an authentication rejection, with the exact saved command.
+        # Unknown network outcomes are left to the native receipt journal.
+        async with self._native_http_lock:
+            if not self.session or not self.access_token:
+                raise RuntimeError("Bridge session unavailable")
+            for attempt in range(2):
+                async with self.session.post(f"{self.config.api_url}/api/v1/{path}", json=body,
+                        headers={"Authorization": f"Bearer {self.access_token}"}) as response:
+                    if response.status != 401 or attempt:
+                        response.raise_for_status()
+                        payload = await response.json()
+                        return payload.get("data", payload)
+                auth = await self._authenticate_device(self.session)
+                token = (auth.get("tokens") or {}).get("accessToken") or auth.get("accessToken")
+                if not token:
+                    raise RuntimeError("Bridge access token unavailable")
+                self.access_token = token
+                # Rotation invalidates the old socket. The result is delivered
+                # after the normal reconnect, without repeating the operation.
+                self._native_reconnect_required = True
+        raise RuntimeError("Bridge request unavailable")
+
+    async def _send_native_reply(self, message: dict[str, Any]) -> None:
+        key = message.get("data", {}).get("requestId")
+        if not key:
+            return
+        now = time.monotonic()
+        self._native_replies = {k: v for k, v in self._native_replies.items() if v[0] > now}
+        self._native_replies[key] = (now + 30, message)
+        while len(self._native_replies) > 16 or sum(len(json.dumps(v[1]).encode()) for v in self._native_replies.values()) > 5_000_000:
+            self._native_replies.pop(next(iter(self._native_replies)))
+        if not self._native_reconnect_required:
+            await self._flush_native_replies()
+
+    async def _flush_native_replies(self) -> None:
+        for key, (deadline, message) in list(self._native_replies.items()):
+            if deadline <= time.monotonic():
+                self._native_replies.pop(key, None)
+                continue
+            try:
+                await self._send_raw(message)
+            except Exception:
+                return
+            self._native_replies.pop(key, None)
+
     async def handle_agent_file(self, data: dict[str, Any]) -> None:
         try:
             from .agent_file_store import execute, recover
         except ImportError:
             from agent_file_store import execute, recover
         state = str(_config_dir() / "native-files")
-        async def post(path, body):
-            if not self.session or not self.access_token:
-                raise RuntimeError("Bridge session unavailable")
-            async with self.session.post(f"{self.config.api_url}/api/v1/{path}", json=body,
-                    headers={"Authorization": f"Bearer {self.access_token}"}) as response:
-                response.raise_for_status()
-                payload = await response.json()
-                return payload.get("data", payload)
+        post = self._post_native_control
         phase = "scope"
         try:
             if data.get("workspaceId") != self.config.workspace_id or data.get("runtimeType") != "hermes":
@@ -9915,10 +10009,10 @@ class ClawChatHermesBridge:
             phase = "complete"
             await post(f"bridge/agent-files/{operation}/complete", receipt)
             await asyncio.to_thread(recover, state, operation)
-            await self._send_raw({"type": "clawchat.agent_file.result", "data": {**result, "requestId": data.get("requestId")}})
+            await self._send_native_reply({"type": "clawchat.agent_file.result", "data": {**result, "requestId": data.get("requestId")}})
         except Exception as exc:
             logger.warning("Agent file operation did not complete phase=%s errorType=%s httpStatus=%s", phase, type(exc).__name__, getattr(exc, "status", None))
-            await self._send_raw({"type": "clawchat.agent_file.error", "data": {"requestId": data.get("requestId"), "error": "AGENT_FILE_UNAVAILABLE"}})
+            await self._send_native_reply({"type": "clawchat.agent_file.error", "data": {"requestId": data.get("requestId"), "error": "AGENT_FILE_UNAVAILABLE"}})
 
     async def send_workspace_result(self, data: dict[str, Any]) -> None:
         logger.info(

@@ -1,4 +1,4 @@
-import type { ChannelGatewayContext } from "openclaw/plugin-sdk";
+import type { ChannelGatewayContext } from "openclaw/plugin-sdk/channel-contract";
 import type { ClawChatResolvedAccount } from "./types.js";
 import { authenticateBridgeDevice } from "./bridge-auth.js";
 import { readFile } from "node:fs/promises";
