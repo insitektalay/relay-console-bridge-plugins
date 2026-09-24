@@ -29,7 +29,8 @@ async def handle(kind, envelope, workspace, state, post, apply):
         signed={'account':command['accountId'],'workspace':workspace,'agent':command['agentId'],'action':command['action'],'baseVersion':command.get('baseVersion'),'changes':command.get('changes')}
         allowed=command.get('allowed') is True and command.get('canStart') is True
     else:
-        signed={k:v for k,v in envelope.items() if k not in {'requestId','operationId','requestHash'}}
+        if envelope.get('bridgeDeviceId') != envelope.get('deviceId'): raise ValueError('Cron delivery device changed')
+        signed={k:v for k,v in envelope.items() if k not in {'requestId','operationId','requestHash','bridgeDeviceId'}}
         if any(command.get(k) != envelope.get(k) for k in command if k!='allowed'): raise ValueError('Cron claim changed')
         command={**envelope,**command}; allowed=command.get('allowed') is True
     if digest(signed) != request_hash: raise ValueError('Native command digest changed')

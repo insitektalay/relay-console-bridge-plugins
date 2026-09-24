@@ -25,3 +25,15 @@ test('profile operation executes once and completes before acknowledgement',asyn
   await assert.rejects(handleNativeControl({...input,command:{...claim,operationId:randomUUID()},workspaceId:'other'}));assert.equal(calls,1);
  }finally{await rm(stateDir,{recursive:true,force:true});}
 });
+
+test('cron verifies signed payload separately from checked delivery metadata',async()=>{
+ const stateDir=await mkdtemp(join(tmpdir(),'cron-controls-'));
+ const signed={workspaceId:'workspace',agentId:'agent',deviceId:'device',runtimeType:'openclaw',action:'list',expiresAt:'2099-01-01T00:00:00Z'};
+ const command={...signed,operationId:randomUUID(),requestHash:nativeDigest(signed),requestId:'delivery',bridgeDeviceId:'device'};
+ let applied=0;let completed=0;
+ const input={kind:'cron' as const,command,stateDir,workspaceId:'workspace',post:async(path:string,body:any)=>{if(path.endsWith('/claim'))return {...signed,operationId:body.operationId,requestHash:command.requestHash,allowed:true};completed++;return{recorded:true};},apply:async()=>{applied++;return {status:'confirmed',jobs:[]};}};
+ try{
+  assert.deepEqual((await handleNativeControl(input)).jobs,[]);assert.equal(applied,1);assert.equal(completed,1);
+  await assert.rejects(handleNativeControl({...input,command:{...command,operationId:randomUUID(),bridgeDeviceId:'wrong'}}),/delivery device changed/);assert.equal(applied,1);
+ }finally{await rm(stateDir,{recursive:true,force:true});}
+});

@@ -34,14 +34,17 @@ class Controls(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError): await controls.handle('profile',request,'workspace',state,forbidden,forbidden)
     async def test_cron_validates_hash_and_completes_before_reply(self):
         with tempfile.TemporaryDirectory() as state:
-            command={'operationId':str(uuid.uuid4()),'workspaceId':'workspace','agentId':'agent','runtimeType':'hermes','action':'list','expiresAt':'2099-01-01T00:00:00Z'}
+            command={'operationId':str(uuid.uuid4()),'workspaceId':'workspace','agentId':'agent','runtimeType':'hermes','deviceId':'device','action':'list','expiresAt':'2099-01-01T00:00:00Z'}
             command['requestHash']=controls.digest({k:v for k,v in command.items() if k!='operationId'})
+            envelope={**command,'requestId':'delivery','bridgeDeviceId':'device'}
             events=[]
             async def post(path,body):
                 events.append(path)
                 return {**command,'allowed':True} if path.endswith('/claim') else {'recorded':True}
             async def apply(*_): return {'status':'confirmed','jobs':[]}
-            result=await controls.handle('cron',command,'workspace',state,post,apply)
+            result=await controls.handle('cron',envelope,'workspace',state,post,apply)
             self.assertEqual(result['jobs'],[]);self.assertTrue(events[-1].endswith('/complete'))
+            with self.assertRaisesRegex(ValueError,'delivery device changed'):
+                await controls.handle('cron',{**envelope,'operationId':str(uuid.uuid4()),'bridgeDeviceId':'wrong'},'workspace',state,lambda *args: asyncio.sleep(0,result={**command,'operationId':args[1]['operationId'],'allowed':True}),apply)
 
 if __name__=='__main__': unittest.main()

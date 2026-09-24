@@ -74,7 +74,8 @@ async function perform(input:Input) {
  const claim=kind==='profile'?await post(`bridge/agent-profile/${id.operationId}/claim`,{requestHash:id.requestHash}):await post('bridge/native-cron/claim',Object.fromEntries(Object.entries(envelope).filter(([k])=>['operationId','requestHash','agentId','bindingId','workspaceId','workspaceGeneration','assignmentEpoch','hostGeneration','externalAgentId','runtimeType','expiresAt'].includes(k))));
  if(claim.operationId!==id.operationId||claim.requestHash!==id.requestHash||claim.workspaceId!==workspaceId||claim.runtimeType!=='openclaw')throw Error('Native claim scope changed');
  const command=kind==='profile'?claim:{...envelope,...claim};
- const signed=kind==='profile'?{account:claim.accountId,workspace:workspaceId,agent:claim.agentId,action:claim.action,baseVersion:claim.baseVersion??null,changes:claim.changes??null}:Object.fromEntries(Object.entries(envelope).filter(([k])=>!['requestId','operationId','requestHash'].includes(k)));
+ if(kind==='cron'&&envelope.bridgeDeviceId!==envelope.deviceId)throw Error('Cron delivery device changed');
+ const signed=kind==='profile'?{account:claim.accountId,workspace:workspaceId,agent:claim.agentId,action:claim.action,baseVersion:claim.baseVersion??null,changes:claim.changes??null}:Object.fromEntries(Object.entries(envelope).filter(([k])=>!['requestId','operationId','requestHash','bridgeDeviceId'].includes(k)));
  if(nativeDigest(signed)!==id.requestHash)throw Error('Native command digest changed');
  if(kind==='cron'&&Object.keys(claim).some(k=>k!=='allowed'&&claim[k]!==envelope[k]))throw Error('Cron claim changed');
  let receipt:any={operationId:id.operationId,requestHash:id.requestHash,nativeInactive:true}, result:any;
