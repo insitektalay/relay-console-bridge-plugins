@@ -4,7 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {handleNativeControl,nativeDigest,profileSnapshot,changeProfile} from './native-controls.js';
+import {handleNativeControl,nativeDigest,profileSnapshot,changeProfile,configureNativeProfileRuntime} from './native-controls.js';
 test('profile mutation preserves credentials and other agents; rejects stale or invalid edit',()=>{
  const cfg={channels:{clawchat:{deviceToken:'fixture-only'}},agents:{defaults:{model:'openrouter/example'},entries:{one:{name:'One',identity:{theme:'Role'}},two:{name:'Two'}}}};
  const before=profileSnapshot(cfg,'one');
@@ -35,5 +35,23 @@ test('cron verifies signed payload separately from checked delivery metadata',as
  try{
   assert.deepEqual((await handleNativeControl(input)).jobs,[]);assert.equal(applied,1);assert.equal(completed,1);
   await assert.rejects(handleNativeControl({...input,command:{...command,operationId:randomUUID(),bridgeDeviceId:'wrong'}}),/delivery device changed/);assert.equal(applied,1);
+ }finally{await rm(stateDir,{recursive:true,force:true});}
+});
+
+test('profile write compares the same runtime-normalized base as the read',async()=>{
+ const stateDir=await mkdtemp(join(tmpdir(),'profile-runtime-'));
+ const source={agents:{entries:{one:{name:'One',identity:{theme:'Role'}}}}};
+ let live:any={...structuredClone(source),agents:{...structuredClone(source.agents),defaults:{model:'provider/model'},entries:{one:{...source.agents.entries.one,workspace:'/native/one'}}}};
+ let writes=0;
+ configureNativeProfileRuntime({current:()=>live,mutateConfigFile:async(params:any)=>{
+  const draft=structuredClone(params.base==='runtime'?live:source);params.mutate(draft);
+  assert.equal(params.afterWrite.mode,'auto');live=draft;writes++;
+ }});
+ const claim={operationId:randomUUID(),accountId:'account',workspaceId:'workspace',agentId:'agent',runtimeType:'openclaw',externalAgentId:'one',action:'update',baseVersion:profileSnapshot(live,'one').version,changes:{role:'Updated'},expiresAt:'2099-01-01T00:00:00Z',allowed:true,canStart:true,requestHash:''};
+ claim.requestHash=nativeDigest({account:'account',workspace:'workspace',agent:'agent',action:claim.action,baseVersion:claim.baseVersion,changes:claim.changes});
+ let receipt:any;
+ try{
+  await handleNativeControl({kind:'profile',command:claim,stateDir,workspaceId:'workspace',post:async(path,body)=>{if(path.endsWith('/claim'))return claim;receipt=body;return{recorded:true};}});
+  assert.equal(receipt.status,'applied');assert.equal(writes,1);assert.equal(live.agents.entries.one.identity.theme,'Updated');
  }finally{await rm(stateDir,{recursive:true,force:true});}
 });

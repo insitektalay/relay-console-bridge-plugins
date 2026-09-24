@@ -37,7 +37,7 @@ async function applyProfile(command:any) {
  if(command.action==='read') return {status:'read',profile:profileSnapshot(current(),command.externalAgentId)};
  if(command.action!=='update') throw Error('Unsupported action');
  const r=profileRuntime!; let expected:any;
- if(r.mutateConfigFile) await r.mutateConfigFile({mutate:(draft:any)=>{expected=changeProfile(draft,command);},afterWrite:{mode:'none',reason:'Confirmed Relay agent profile edit'}});
+ if(r.mutateConfigFile) await r.mutateConfigFile({base:'runtime',mutate:(draft:any)=>{expected=changeProfile(draft,command);},afterWrite:{mode:'auto'}});
  else if(r.writeConfigFile){const cfg=current();expected=changeProfile(cfg,command);await r.writeConfigFile(cfg);}
  else throw Error('Native config writer unavailable');
  const actual=profileSnapshot(current(),command.externalAgentId);
