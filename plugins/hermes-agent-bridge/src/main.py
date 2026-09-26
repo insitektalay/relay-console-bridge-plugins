@@ -9372,7 +9372,14 @@ class ClawChatHermesBridge:
     async def _exchange_agent_replicas(self) -> list[str]:
         # A replica response must not restore files while removal is in progress.
         async with self._native_control_lock:
-            return await self._exchange_agent_replicas_locked()
+            try:
+                return await self._exchange_agent_replicas_locked()
+            except RuntimeError as exc:
+                if str(exc) == "HERMES_AGENT_SYNC_HTTP_401" and self.ws and not self.ws.closed:
+                    # Leave the long-lived socket so the normal connection loop
+                    # renews and persists device credentials before syncing again.
+                    await self.ws.close()
+                raise
 
     async def _exchange_agent_replicas_locked(self) -> list[str]:
         if not self.session or not self.access_token:
