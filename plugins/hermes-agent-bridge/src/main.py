@@ -9271,6 +9271,11 @@ class ClawChatHermesBridge:
                 except asyncio.TimeoutError:
                     pass
                 self._agent_sync_wakeup.clear()
+                # Keep retrying durable creation results during a long-lived
+                # connection, including after a transient auth or API failure.
+                await self._flush_provision_callback_outbox()
+                if not self.ws or self.ws.closed:
+                    return
                 synchronized_agent_ids = await self._exchange_agent_replicas()
                 self._registered_agent_ids = list(
                     dict.fromkeys(synchronized_agent_ids)
@@ -9815,20 +9820,18 @@ class ClawChatHermesBridge:
         if not self.session or not self.access_token:
             raise RuntimeError("Hermes provision callback channel is unavailable")
         suffix = "fail" if failed else "complete"
-        url = (
-            f"{self.config.api_url}/api/v1/bridge/hermes-provisions/"
-            f"{urllib.parse.quote(agent_id, safe='')}/{suffix}"
-        )
-        async with self.session.post(
-            url,
-            json=payload,
-            headers={"Authorization": f"Bearer {self.access_token}"},
-        ) as response:
-            text = await response.text()
-            if response.status >= 400:
-                raise RuntimeError(
-                    f"Hermes provision callback failed: HTTP {response.status} {text[:300]}"
-                )
+        # This is the saved result, not the native creation command. Refresh
+        # only after a 401 and retry that same result once under the auth lock.
+        try:
+            await self._post_native_control(
+                f"bridge/hermes-provisions/{urllib.parse.quote(agent_id, safe='')}/{suffix}",
+                payload,
+            )
+        finally:
+            # Credential rotation also invalidates the old websocket. Reconnect
+            # normally; any unacknowledged result stays in the durable outbox.
+            if self._native_reconnect_required and self.ws and not self.ws.closed:
+                await self.ws.close()
         key = (
             f"{agent_id}:{payload.get('idempotencyKey') or ''}:"
             f"{'fail' if failed else 'complete'}"
