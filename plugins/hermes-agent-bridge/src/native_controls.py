@@ -19,9 +19,9 @@ async def recover(state, post, current_operation):
         receipt=item['receipt']
         if receipt is None:
             receipt={'operationId':item['operationId'],'requestHash':item['requestHash'],
-                     'status':'failed' if item['kind']=='profile' else 'unconfirmed','noStart':True,'nativeInactive':True}
+                     'status':'unconfirmed' if item['kind']=='cron' else 'failed','noStart':True,'nativeInactive':True}
             await asyncio.to_thread(journal,state,'finish',item['kind'],item['operationId'],item['requestHash'],receipt)
-        route='agent-profile' if item['kind']=='profile' else 'native-cron'
+        route={'profile':'agent-profile','cron':'native-cron','agent_removal':'agent-removal'}[item['kind']]
         try:
             accepted=await post(f"bridge/{route}/{item['operationId']}/complete",receipt)
             if accepted.get('recorded') is not True or accepted.get('operationId')!=item['operationId']: continue
@@ -32,6 +32,12 @@ async def recover(state, post, current_operation):
 
 async def handle(kind, envelope, workspace, state, post, apply):
     await recover(state,post,envelope['operationId'])
+    if kind == 'agent_removal':
+        try:
+            from .native_agent_removal import handle as remove
+        except ImportError:
+            from native_agent_removal import handle as remove
+        return await remove(envelope,workspace,state,post)
     operation, request_hash = envelope['operationId'], envelope['requestHash']
     saved = await asyncio.to_thread(journal,state,'reserve',kind,operation,request_hash)
     completion = f'bridge/agent-profile/{operation}/complete' if kind=='profile' else f'bridge/native-cron/{operation}/complete'

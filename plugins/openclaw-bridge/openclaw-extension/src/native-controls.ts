@@ -1,3 +1,4 @@
+import { removeNativeAgent } from './native-agent-removal.js';
 import { createHash } from 'node:crypto';
 import { spawn, execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -52,7 +53,7 @@ function store(input:any):Promise<any> { return new Promise((resolve,reject)=>{
  child.stdin.on('error',()=>{});child.stdin.end(JSON.stringify(input));
  }); }
 const queues=new Map<string,Promise<any>>();
-type Input={kind:'profile'|'cron';command:any;workspaceId:string;stateDir:string;post:(path:string,body:any)=>Promise<any>;apply?:(command:any)=>Promise<any>};
+type Input={kind:'profile'|'cron'|'agent_removal';command:any;workspaceId:string;stateDir:string;post:(path:string,body:any)=>Promise<any>;apply?:(command:any)=>Promise<any>};
 export function handleNativeControl(input:Input):Promise<any>{
  const next=(queues.get(input.stateDir)??Promise.resolve()).catch(()=>{}).then(()=>perform(input)); queues.set(input.stateDir,next);
  void next.finally(()=>{if(queues.get(input.stateDir)===next)queues.delete(input.stateDir);}).catch(()=>{});return next;
@@ -69,9 +70,9 @@ async function recover(stateDir:string,post:Input['post'],currentOperation:strin
  for(const item of await store({stateDir,mode:'pending'})) {
   if(item.operationId===currentOperation)continue;
   const id={stateDir,kind:item.kind,operationId:item.operationId,requestHash:item.requestHash};
-  const receipt=item.receipt??{operationId:item.operationId,requestHash:item.requestHash,status:item.kind==='profile'?'failed':'unconfirmed',noStart:true,nativeInactive:true};
+  const receipt=item.receipt??{operationId:item.operationId,requestHash:item.requestHash,status:item.kind==='cron'?'unconfirmed':'failed',noStart:true,nativeInactive:true};
   if(!item.receipt)await store({...id,mode:'finish',receipt});
-  try {const accepted=await post(`bridge/${item.kind==='profile'?'agent-profile':'native-cron'}/${item.operationId}/complete`,receipt);if(accepted.recorded!==true||accepted.operationId!==item.operationId)continue;}catch{continue;}
+  try {const accepted=await post(`bridge/${item.kind==='agent_removal'?'agent-removal':item.kind==='profile'?'agent-profile':'native-cron'}/${item.operationId}/complete`,receipt);if(accepted.recorded!==true||accepted.operationId!==item.operationId)continue;}catch{continue;}
   await store({...id,mode:'acknowledge'});
  }
 }
@@ -80,24 +81,24 @@ async function perform(input:Input) {
  await recover(stateDir,post,envelope.operationId);
  const id={stateDir,kind,operationId:envelope.operationId,requestHash:envelope.requestHash};
  const saved=await store({...id,mode:'reserve'});
- const complete=kind==='profile'?`bridge/agent-profile/${id.operationId}/complete`:`bridge/native-cron/${id.operationId}/complete`;
- if(saved.receipt){await post(complete,saved.receipt);if(kind==='profile')return {operationId:id.operationId,status:'recorded'};throw Error('Read a fresh cron snapshot');}
+ const complete=kind==='agent_removal'?`bridge/agent-removal/${id.operationId}/complete`:kind==='profile'?`bridge/agent-profile/${id.operationId}/complete`:`bridge/native-cron/${id.operationId}/complete`;
+ if(saved.receipt){await post(complete,saved.receipt);if(kind!=='cron')return {operationId:id.operationId,status:'recorded'};throw Error('Read a fresh cron snapshot');}
  if(saved.phase!=='prepared')throw Error('Unknown native outcome will not be repeated');
- const claim=kind==='profile'?await post(`bridge/agent-profile/${id.operationId}/claim`,{requestHash:id.requestHash}):await post('bridge/native-cron/claim',Object.fromEntries(Object.entries(envelope).filter(([k])=>['operationId','requestHash','agentId','bindingId','workspaceId','workspaceGeneration','assignmentEpoch','hostGeneration','externalAgentId','runtimeType','expiresAt'].includes(k))));
+ const claim=kind==='agent_removal'?await post(`bridge/agent-removal/${id.operationId}/claim`,{requestHash:id.requestHash}):kind==='profile'?await post(`bridge/agent-profile/${id.operationId}/claim`,{requestHash:id.requestHash}):await post('bridge/native-cron/claim',Object.fromEntries(Object.entries(envelope).filter(([k])=>['operationId','requestHash','agentId','bindingId','workspaceId','workspaceGeneration','assignmentEpoch','hostGeneration','externalAgentId','runtimeType','expiresAt'].includes(k))));
  if(claim.operationId!==id.operationId||claim.requestHash!==id.requestHash||claim.workspaceId!==workspaceId||claim.runtimeType!=='openclaw')throw Error('Native claim scope changed');
- const command=kind==='profile'?claim:{...envelope,...claim};
+ const command=kind!=='cron'?claim:{...envelope,...claim};
  if(kind==='cron'&&envelope.bridgeDeviceId!==envelope.deviceId)throw Error('Cron delivery device changed');
- const signed=kind==='profile'?{account:claim.accountId,workspace:workspaceId,agent:claim.agentId,action:claim.action,baseVersion:claim.baseVersion??null,changes:claim.changes??null}:Object.fromEntries(Object.entries(envelope).filter(([k])=>!['requestId','operationId','requestHash','bridgeDeviceId'].includes(k)));
+ const signed=kind==='agent_removal'?Object.fromEntries(Object.entries(claim).filter(([k])=>!['operationId','requestHash','expiresAt','allowed'].includes(k))):kind==='profile'?{account:claim.accountId,workspace:workspaceId,agent:claim.agentId,action:claim.action,baseVersion:claim.baseVersion??null,changes:claim.changes??null}:Object.fromEntries(Object.entries(envelope).filter(([k])=>!['requestId','operationId','requestHash','bridgeDeviceId'].includes(k)));
  if(nativeDigest(signed)!==id.requestHash)throw Error('Native command digest changed');
  if(kind==='cron'&&Object.keys(claim).some(k=>k!=='allowed'&&claim[k]!==envelope[k]))throw Error('Cron claim changed');
  let receipt:any={operationId:id.operationId,requestHash:id.requestHash,nativeInactive:true}, result:any;
  const allowed=claim.allowed===true&&(kind!=='profile'||claim.canStart===true)&&Date.parse(claim.expiresAt)>Date.now();
- if(!allowed){receipt={...receipt,status:kind==='profile'?'failed':'unconfirmed',noStart:true};result=receipt;}
+ if(!allowed){receipt={...receipt,status:kind==='cron'?'unconfirmed':'failed',noStart:true};result=receipt;}
  else {
   await store({...id,mode:'start'});
-  try{result=await(input.apply??(kind==='profile'?applyProfile:cron))(command);receipt.status=result.status;if(kind==='profile')receipt.profile=result.profile;}
-  catch{receipt.status=kind==='profile'?'outcome_unknown':'unconfirmed';result=receipt;}
+  try{result=await(input.apply??(kind==='agent_removal'?removeNativeAgent:kind==='profile'?applyProfile:cron))(command);receipt.status=result.status;if(kind==='profile')receipt.profile=result.profile;if(kind==='agent_removal'){receipt.externalAgentId=result.externalAgentId;receipt.filesRemoved=result.filesRemoved;}}
+  catch{receipt.status=kind==='cron'?'unconfirmed':'outcome_unknown';result=receipt;}
  }
  await store({...id,mode:'finish',receipt});await post(complete,receipt);await store({...id,mode:'acknowledge'});
- return kind==='profile'?{operationId:id.operationId,status:'recorded'}:{...result,operationId:id.operationId,requestHash:id.requestHash,agentId:claim.agentId,runtimeType:'openclaw'};
+ return kind!=='cron'?{operationId:id.operationId,status:'recorded'}:{...result,operationId:id.operationId,requestHash:id.requestHash,agentId:claim.agentId,runtimeType:'openclaw'};
 }

@@ -87,6 +87,7 @@ RELAY_CONNECTOR_V2 = "relay-connector.v2"
 AGENT_REPLICA_V1 = "agent-replica.v1"
 BRIDGE_CAPABILITIES = [
     "clawchat.agent_profile.v1",
+    "clawchat.agent_removal.v1",
     "clawchat.native_cron.v1",
     "clawchat.agent_files.v1",
     "clawchat.native_operation_barrier.v1",
@@ -8783,8 +8784,8 @@ class ClawChatHermesBridge:
                     },
                 })
             return
-        if msg_type in {"clawchat.agent_profile.operation", "clawchat.native_cron.operation"}:
-            await self.handle_native_control("profile" if "agent_profile" in msg_type else "cron", message.get("data") or {})
+        if msg_type in {"clawchat.agent_profile.operation", "clawchat.native_cron.operation", "clawchat.agent_removal.operation"}:
+            await self.handle_native_control("agent_removal" if "agent_removal" in msg_type else "profile" if "agent_profile" in msg_type else "cron", message.get("data") or {})
             return
         if msg_type == "clawchat.agent_file.operation":
             await self.handle_agent_file(message.get("data") or {})
@@ -9892,7 +9893,7 @@ class ClawChatHermesBridge:
         except ImportError:
             from native_controls import handle
             from native_profile_control import apply as profile_apply
-        event = "clawchat.agent_profile" if kind == "profile" else "clawchat.native_cron"
+        event = "clawchat.agent_removal" if kind == "agent_removal" else "clawchat.agent_profile" if kind == "profile" else "clawchat.native_cron"
         async def apply(action_kind, command):
             profile = self._refresh_native_profiles().get(command.get("externalAgentId"))
             if not profile:

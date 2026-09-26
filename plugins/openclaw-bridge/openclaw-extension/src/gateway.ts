@@ -1024,10 +1024,10 @@ export async function startClawChatGatewayAccount(
     return;
    }
 
-   if ((type === "clawchat.agent_profile.operation" || type === "clawchat.native_cron.operation") && msg.data) {
+   if ((type === "clawchat.agent_profile.operation" || type === "clawchat.native_cron.operation" || type === "clawchat.agent_removal.operation") && msg.data) {
     const command = msg.data as Record<string, any>;
     const event = type.slice(0, -".operation".length);
-    handleNativeControl({ kind: type.includes("agent_profile") ? "profile" : "cron", command,
+    handleNativeControl({ kind: type.includes("agent_removal") ? "agent_removal" : type.includes("agent_profile") ? "profile" : "cron", command,
      workspaceId: account.workspaceId!, stateDir: fileJoin(fileHome(), ".openclaw", "clawchat", "native-controls", account.workspaceId!),
      post: async (path, body) => {
       const token = (await getBridgeTokens(account)).accessToken;

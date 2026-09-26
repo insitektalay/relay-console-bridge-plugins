@@ -9,7 +9,7 @@ from pathlib import Path
 
 def journal(state_dir, mode, kind, operation, request_hash, receipt=None):
     operation = str(uuid.UUID(operation))
-    if kind not in {'profile', 'cron'} or not re.fullmatch(r'[a-f0-9]{64}', request_hash):
+    if kind not in {'profile', 'cron', 'agent_removal'} or not re.fullmatch(r'[a-f0-9]{64}', request_hash):
         raise ValueError('Invalid operation identity')
     Path(state_dir).mkdir(mode=0o700, parents=True, exist_ok=True)
     with sqlite3.connect(str(Path(state_dir) / 'native-controls.sqlite'), timeout=5) as db:
