@@ -31,9 +31,12 @@ export async function removeNativeAgent(command:any, run=cli) {
  const scheduled=await run(['cron','list','--all','--agent',id,'--json','--timeout','15000']);
  if(!Array.isArray(scheduled.jobs)||scheduled.jobs.some((j:any)=>j.agentId!==id||typeof j.id!=='string'))throw Error('Cron ownership changed');
  if(scheduled.jobs.some((j:any)=>j.state?.runningAtMs))throw Error('Native cron job is running');
- for(const job of scheduled.jobs) await run(['cron','rm',job.id,'--json','--timeout','15000']);
+ // The native agent-delete transaction owns all jobs, including protected system monitors.
+ // Calling cron rm separately rejects those jobs and can leave partial cleanup.
  const removed=await run(['agents','delete',id,'--force','--json']);
  if(removed.agentId!==id||removed.workspaceRetained===true)throw Error('Native removal did not confirm file deletion');
+ const remainingJobs=await run(['cron','list','--all','--agent',id,'--json','--timeout','15000']);
+ if(!Array.isArray(remainingJobs.jobs)||remainingJobs.jobs.length)throw Error('Native agent schedules remain');
  const after=await run(['agents','list','--json']);
  if(!Array.isArray(after)||after.some(a=>a.id===id))throw Error('Native agent remains registered');
  for(const path of [selected.workspace,selected.agentDir,removed.sessionsDir]) {

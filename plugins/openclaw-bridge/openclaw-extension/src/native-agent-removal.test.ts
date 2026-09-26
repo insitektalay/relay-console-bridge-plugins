@@ -26,3 +26,10 @@ test('one claimed removal replays its receipt without another native effect',asy
  const input={kind:'agent_removal' as const,command,stateDir,workspaceId:'w',post:async(path:string,body:any)=>{if(path.endsWith('/claim'))return command;receipts.push(body);return{recorded:true,operationId:command.operationId};},apply:async()=>{applied++;return{status:'removed',externalAgentId:'test',filesRemoved:true};}};
  try {await handleNativeControl(input);await handleNativeControl(input);assert.equal(applied,1);assert.deepEqual(receipts[0],receipts[1]);assert.equal(receipts[0].filesRemoved,true);}finally{await rm(stateDir,{recursive:true});}
 });
+
+test('system monitor jobs are removed by agent deletion, never cron remove',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'relay-removal-')); let removed=false;
+ const paths={workspace:root+'/workspace',agentDir:root+'/agent',sessionsDir:root+'/sessions'};
+ const run=async(args:string[])=>{if(args[0]==='cron'){if(args[1]!=='list')throw Error('system-owned monitor jobs cannot be removed by cron clients');return{jobs:removed?[]:[{id:'monitor',agentId:'test',declarationKey:'system:monitor',state:{}}]};}if(args[1]==='delete'){removed=true;return{agentId:'test',...paths};}return removed?[]:[{id:'test',...paths}];};
+ try{assert.equal((await removeNativeAgent({action:'remove',deleteFiles:true,externalAgentId:'test'},run)).filesRemoved,true);}finally{await rm(root,{recursive:true});}
+});
