@@ -9365,6 +9365,11 @@ class ClawChatHermesBridge:
         return documents, complete
 
     async def _exchange_agent_replicas(self) -> list[str]:
+        # A replica response must not restore files while removal is in progress.
+        async with self._native_control_lock:
+            return await self._exchange_agent_replicas_locked()
+
+    async def _exchange_agent_replicas_locked(self) -> list[str]:
         if not self.session or not self.access_token:
             return []
         state = self._load_agent_sync_state()
@@ -9586,6 +9591,9 @@ class ClawChatHermesBridge:
                 continue
             external_id = str(remote_agent.get("externalId") or "").strip()
             if not external_id:
+                continue
+            # Missing native profiles must not be recreated from remote documents.
+            if external_id.startswith("profile:") and external_id not in native_profiles:
                 continue
             synchronized_agent_ids.append(external_id)
             local_profile = next((agent for agent in agents if agent["externalId"] == external_id), None)
@@ -9925,6 +9933,8 @@ class ClawChatHermesBridge:
         try:
             async with self._native_control_lock:
                 result = await handle(kind, envelope, self.config.workspace_id, str(_config_dir() / "native-controls"), self._post_native_control, apply)
+                if kind == "agent_removal":
+                    self._refresh_native_profiles()
             await self._send_native_reply({"type": event + ".result", "data": {**result, "requestId": envelope.get("requestId")}})
         except Exception as exc:
             logger.warning("Native control unavailable kind=%s errorType=%s", kind, type(exc).__name__)
